@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+
+# Virtual env (호스트 venv가 이미지에 들어가면 안 됨)
+.venv/
+venv/
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# IDE
+.vscode/
+.idea/
+
+# CI
+.github/
+
+# Docs
+README.md
+docs/
+*.md
+
+# Tests (production 이미지엔 불필요)
+tests/
+
+# Env
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
