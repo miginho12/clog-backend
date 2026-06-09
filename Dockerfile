@@ -27,8 +27,10 @@ COPY pyproject.toml uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-install-project --no-dev
 
-# 애플리케이션 코드 복사
+# 애플리케이션 코드 + DB 마이그레이션 파일 복사
 COPY app/ ./app/
+COPY alembic/ ./alembic/
+COPY alembic.ini ./
 
 # 프로젝트 자체 설치 (개발 의존성 제외)
 RUN --mount=type=cache,target=/root/.cache/uv \
