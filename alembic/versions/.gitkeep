@@ -1,0 +1,2 @@
+# 이 폴더에 마이그레이션 파일이 들어갑니다.
+# alembic revision --autogenerate -m "..." 로 생성.
