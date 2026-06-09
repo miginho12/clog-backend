@@ -7,7 +7,7 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     """애플리케이션 전역 설정.
 
     환경변수 우선순위:
-    1. 시스템 환경변수 (Kubernetes ConfigMap/Secret)
+    1. 시스템 환경변수 (K8s ConfigMap/Secret)
     2. .env 파일 (로컬 개발)
     3. 기본값 (아래 Field default)
     """
@@ -24,10 +24,10 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
-        extra="ignore",  # 정의되지 않은 환경변수는 무시
+        extra="ignore",
     )
 
-    # ── 기본 정보 ─────────────────────────────────────────────
+    # ── 기본 정보 ──
     app_name: str = "clog-backend"
     app_version: str = "0.1.0"
     environment: Literal["dev", "prod", "local"] = Field(
@@ -35,23 +35,65 @@ class Settings(BaseSettings):
         description="배포 환경 (dev/prod/local)",
     )
 
-    # ── 서버 ──────────────────────────────────────────────────
+    # ── 서버 ──
     host: str = "0.0.0.0"
     port: int = 8000
 
-    # ── 로깅 ──────────────────────────────────────────────────
+    # ── 로깅 ──
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
 
-    # ── CORS ──────────────────────────────────────────────────
+    # ── CORS ──
     cors_origins: list[str] = Field(
         default=["http://localhost:3000"],
-        description="허용할 프론트엔드 origin (쉼표 구분)",
+        description="허용할 프론트엔드 origin",
     )
 
-    # ── 데이터베이스 (다음 세션에 활성화) ─────────────────────
-    # database_url: str = "postgresql+asyncpg://clog:clog@localhost:5432/clog"
+    # ── 데이터베이스 ──
+    # 각 필드 분리: ConfigMap (Host/Port/Name/User) + Secret (Password)
+    # Pydantic이 환경변수에서 자동으로 채움
+    db_host: str = Field(default="localhost", description="PostgreSQL 호스트")
+    db_port: int = Field(default=5432, description="PostgreSQL 포트")
+    db_name: str = Field(default="clog_dev", description="데이터베이스 이름")
+    db_user: str = Field(default="clog", description="데이터베이스 사용자")
+    db_password: str = Field(default="", description="데이터베이스 비밀번호 (Secret)")
 
-    # ── 메타 ──────────────────────────────────────────────────
+    # DB Connection Pool
+    db_pool_size: int = Field(default=5, description="기본 풀 크기 (열려있는 연결 수)")
+    db_pool_max_overflow: int = Field(
+        default=5, description="추가로 만들 수 있는 연결 수 (peak 트래픽 대응)"
+    )
+    db_pool_timeout: int = Field(
+        default=30, description="풀에서 연결 받기 대기 시간 (초)"
+    )
+    db_echo: bool = Field(default=False, description="SQL 쿼리 로깅 (dev 디버깅용)")
+
+    @computed_field  # type: ignore[misc]
+    @property
+    def database_url(self) -> str:
+        """SQLAlchemy 가 사용할 DB URL.
+
+        예: postgresql+asyncpg://clog:password@postgres:5432/clog_dev
+        """
+        return (
+            f"postgresql+asyncpg://"
+            f"{self.db_user}:{self.db_password}"
+            f"@{self.db_host}:{self.db_port}"
+            f"/{self.db_name}"
+        )
+
+    @computed_field  # type: ignore[misc]
+    @property
+    def database_url_safe(self) -> str:
+        """비밀번호 마스킹된 URL (로그용)."""
+        masked = "***" if self.db_password else "(empty)"
+        return (
+            f"postgresql+asyncpg://"
+            f"{self.db_user}:{masked}"
+            f"@{self.db_host}:{self.db_port}"
+            f"/{self.db_name}"
+        )
+
+    # ── 메타 ──
     @property
     def is_production(self) -> bool:
         return self.environment == "prod"
