@@ -1,8 +1,4 @@
-"""FastAPI 애플리케이션 엔트리포인트.
-
-실행:
-  uv run uvicorn app.main:app --reload
-"""
+"""FastAPI 애플리케이션 엔트리포인트."""
 
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
@@ -10,7 +6,8 @@ from typing import AsyncIterator
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import health
+from app.api.exception_handlers import register_exception_handlers
+from app.api.routes import health, users
 from app.core.config import get_settings
 from app.core.logging import get_logger, setup_logging
 from app.infra.db import close_engine, init_engine
@@ -20,11 +17,7 @@ logger = get_logger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """애플리케이션 시작/종료 시 실행되는 코드.
-
-    시작 시: 로깅, DB 엔진 생성
-    종료 시: DB 엔진 정리
-    """
+    """앱 시작/종료 라이프사이클."""
     # ── Startup ──
     setup_logging()
     settings = get_settings()
@@ -35,11 +28,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         version=settings.app_version,
         environment=settings.environment,
     )
-
-    # DB 엔진 생성 (실제 연결은 첫 쿼리 때 만들어짐)
     init_engine()
 
-    yield  # ← 앱이 요청을 받는 중
+    yield
 
     # ── Shutdown ──
     logger.info("app_shutting_down")
@@ -47,7 +38,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 def create_app() -> FastAPI:
-    """FastAPI 인스턴스 생성 (Factory 패턴)."""
+    """FastAPI 인스턴스 생성."""
     settings = get_settings()
 
     app = FastAPI(
@@ -68,10 +59,14 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # ── 라우터 등록 ──
+    # ── 라우터 ──
     app.include_router(health.router)
+    app.include_router(users.router)  # ⭐ 추가
 
-    # ── 루트 엔드포인트 ──
+    # ── 예외 핸들러 ──
+    register_exception_handlers(app)  # ⭐ 추가
+
+    # ── 루트 ──
     @app.get("/", tags=["root"])
     async def root() -> dict[str, str]:
         return {
@@ -85,5 +80,4 @@ def create_app() -> FastAPI:
     return app
 
 
-# Uvicorn 이 import 할 인스턴스
 app = create_app()
