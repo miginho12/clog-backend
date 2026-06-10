@@ -23,8 +23,15 @@ dependencies = [
     "sqlalchemy[asyncio]>=2.0.36",
     "asyncpg>=0.30.0",
 
-    # Migration (⭐ 추가)
+    # Migration
     "alembic>=1.14.0",
+
+    # JWT
+    "python-jose[cryptography]>=3.3.0",
+
+    # Redis (⭐ Day 11B 추가)
+    # redis>=5.0: native async 지원
+    "redis>=5.2.0",
 ]
 
 [dependency-groups]
@@ -35,6 +42,7 @@ dev = [
     "ruff>=0.7.0",
     "mypy>=1.13.0",
     "asyncpg-stubs>=0.30.0",
+    "types-python-jose>=3.3.0",
 ]
 
 [tool.uv]

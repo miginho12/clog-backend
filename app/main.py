@@ -7,18 +7,17 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.exception_handlers import register_exception_handlers
-from app.api.routes import health, users
+from app.api.routes import auth, health, users
 from app.core.config import get_settings
 from app.core.logging import get_logger, setup_logging
 from app.infra.db import close_engine, init_engine
+from app.infra.redis import close_redis, init_redis
 
 logger = get_logger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """앱 시작/종료 라이프사이클."""
-    # ── Startup ──
     setup_logging()
     settings = get_settings()
 
@@ -27,7 +26,22 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app=settings.app_name,
         version=settings.app_version,
         environment=settings.environment,
+        jwt_algorithm=settings.jwt_algorithm,
     )
+
+    # JWT 키 로드 검증
+    try:
+        settings.get_jwt_private_key()
+        settings.get_jwt_public_key()
+        logger.info("jwt_keys_loaded")
+    except (ValueError, FileNotFoundError) as e:
+        logger.error("jwt_keys_failed", error=str(e))
+        raise
+
+    # ⭐ Redis 초기화 (Day 11B 추가)
+    init_redis()
+
+    # DB 초기화
     init_engine()
 
     yield
@@ -35,10 +49,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # ── Shutdown ──
     logger.info("app_shutting_down")
     await close_engine()
+    await close_redis()  # ⭐ Day 11B 추가
 
 
 def create_app() -> FastAPI:
-    """FastAPI 인스턴스 생성."""
     settings = get_settings()
 
     app = FastAPI(
@@ -50,7 +64,6 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    # ── 미들웨어 ──
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
@@ -59,14 +72,12 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # ── 라우터 ──
     app.include_router(health.router)
-    app.include_router(users.router)  # ⭐ 추가
+    app.include_router(users.router)
+    app.include_router(auth.router)
 
-    # ── 예외 핸들러 ──
-    register_exception_handlers(app)  # ⭐ 추가
+    register_exception_handlers(app)
 
-    # ── 루트 ──
     @app.get("/", tags=["root"])
     async def root() -> dict[str, str]:
         return {
