@@ -76,24 +76,18 @@ class Settings(BaseSettings):
     jwt_issuer: str = Field(default="clog-backend")
     jwt_algorithm: Literal["RS256", "HS256"] = Field(default="RS256")
 
-    # ── Redis (⭐ Day 11B 추가) ──
-    redis_host: str = Field(default="localhost", description="Redis 호스트")
-    redis_port: int = Field(default=6379, description="Redis 포트")
-    redis_password: str = Field(default="", description="Redis 비밀번호")
-    redis_db: int = Field(default=0, description="Redis DB 인덱스 (0-15)")
-
-    # Connection pool
-    redis_max_connections: int = Field(default=20, description="최대 연결 수")
-    redis_socket_timeout: int = Field(default=5, description="소켓 타임아웃 (초)")
-    redis_connect_timeout: int = Field(default=5, description="연결 타임아웃 (초)")
+    # ── Redis ──
+    redis_host: str = Field(default="localhost")
+    redis_port: int = Field(default=6379)
+    redis_password: str = Field(default="")
+    redis_db: int = Field(default=0)
+    redis_max_connections: int = Field(default=20)
+    redis_socket_timeout: int = Field(default=5)
+    redis_connect_timeout: int = Field(default=5)
 
     @computed_field  # type: ignore[misc]
     @property
     def redis_url(self) -> str:
-        """Redis 연결 URL.
-
-        형식: redis://:password@host:port/db
-        """
         if self.redis_password:
             return f"redis://:{self.redis_password}@{self.redis_host}:{self.redis_port}/{self.redis_db}"
         return f"redis://{self.redis_host}:{self.redis_port}/{self.redis_db}"
@@ -101,10 +95,27 @@ class Settings(BaseSettings):
     @computed_field  # type: ignore[misc]
     @property
     def redis_url_safe(self) -> str:
-        """로그용 마스킹 URL."""
         if self.redis_password:
             return f"redis://:***@{self.redis_host}:{self.redis_port}/{self.redis_db}"
         return f"redis://{self.redis_host}:{self.redis_port}/{self.redis_db}"
+
+    # ── Kakao OAuth (⭐ Day 12 추가) ──
+    kakao_client_id: str = Field(default="", description="카카오 REST API 키")
+    kakao_client_secret: str = Field(
+        default="", description="카카오 Client Secret (선택, 등록 시 사용)"
+    )
+    kakao_redirect_uri: str = Field(
+        default="http://localhost:8000/auth/kakao/callback",
+        description="카카오에 등록된 Redirect URI",
+    )
+
+    # 카카오 API 엔드포인트 (변경 가능성 매우 낮음)
+    kakao_authorize_url: str = "https://kauth.kakao.com/oauth/authorize"
+    kakao_token_url: str = "https://kauth.kakao.com/oauth/token"
+    kakao_user_info_url: str = "https://kapi.kakao.com/v2/user/me"
+
+    # OAuth state 의 Redis TTL (CSRF 방어)
+    oauth_state_ttl_seconds: int = Field(default=300, description="state 유효 시간 (초)")
 
     # ── 메타 ──
     @property

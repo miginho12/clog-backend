@@ -22,23 +22,24 @@ dependencies = [
     # Database
     "sqlalchemy[asyncio]>=2.0.36",
     "asyncpg>=0.30.0",
-
-    # Migration
     "alembic>=1.14.0",
 
     # JWT
     "python-jose[cryptography]>=3.3.0",
 
-    # Redis (⭐ Day 11B 추가)
-    # redis>=5.0: native async 지원
+    # Redis
     "redis>=5.2.0",
+
+    # HTTP 클라이언트 (Day 12 ⭐ 추가)
+    # 카카오 OAuth API 호출용
+    # fastapi[standard] 이 이미 포함하지만 명시적 선언
+    "httpx>=0.27.0",
 ]
 
 [dependency-groups]
 dev = [
     "pytest>=8.3.0",
     "pytest-asyncio>=0.24.0",
-    "httpx>=0.27.0",
     "ruff>=0.7.0",
     "mypy>=1.13.0",
     "asyncpg-stubs>=0.30.0",

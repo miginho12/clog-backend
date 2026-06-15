@@ -44,3 +44,11 @@ Thumbs.db
 logs/
 *.tar.gz 
 jwt-keys/
+
+# Day 12+ 추가 - 보안
+.env.backup*
+.env.*
+!.env.example
+*.pem
+*.key
+jwt-keys/

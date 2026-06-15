@@ -3,6 +3,7 @@
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
+import httpx
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -29,7 +30,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         jwt_algorithm=settings.jwt_algorithm,
     )
 
-    # JWT 키 로드 검증
+    # JWT 키 검증
     try:
         settings.get_jwt_private_key()
         settings.get_jwt_public_key()
@@ -38,18 +39,28 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.error("jwt_keys_failed", error=str(e))
         raise
 
-    # ⭐ Redis 초기화 (Day 11B 추가)
+    # Redis 초기화
     init_redis()
 
     # DB 초기화
     init_engine()
 
+    # HTTP 클라이언트 초기화 (⭐ Day 12 - 카카오 API 호출용)
+    # 앱 라이프사이클 동안 단일 클라이언트 재사용 (연결 풀)
+    http_client = httpx.AsyncClient(
+        timeout=httpx.Timeout(connect=5.0, read=10.0, write=5.0, pool=5.0),
+        limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+    )
+    app.state.http_client = http_client
+    logger.info("http_client_initialized")
+
     yield
 
     # ── Shutdown ──
     logger.info("app_shutting_down")
+    await http_client.aclose()
     await close_engine()
-    await close_redis()  # ⭐ Day 11B 추가
+    await close_redis()
 
 
 def create_app() -> FastAPI:
