@@ -20,6 +20,7 @@ from app.domain.users.exceptions import (
     OAuthIdentityAlreadyExists,
     UserAlreadyDeleted,
     UserNotFound,
+    UserProfilePrivate,
 )
 from app.domain.users.models import User
 from app.domain.users.repository import UserRepository
@@ -174,3 +175,23 @@ class UserService:
         await self.session.commit()
 
         logger.info("user_deleted", user_id=str(user_id))
+
+    # ── Day 14 권한 ──
+
+    async def get_user_for_viewer(
+        self, target_user_id: UUID, viewer_user_id: UUID
+    ) -> User:
+        """다른 사용자 조회 시 is_public 권한 체크.
+
+        본인: 항상 OK / 다른 사용자: is_public=True 만.
+
+        Raises:
+            UserNotFound
+            UserProfilePrivate
+        """
+        target = await self.get_user(target_user_id)  # UserNotFound 자동
+        if target.id == viewer_user_id:
+            return target
+        if not target.is_public:
+            raise UserProfilePrivate(user_id=str(target_user_id))
+        return target

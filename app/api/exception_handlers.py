@@ -2,6 +2,7 @@
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from slowapi.errors import RateLimitExceeded
 
 from app.core.logging import get_logger
 from app.domain.auth.exceptions import (
@@ -21,6 +22,8 @@ from app.domain.users.exceptions import (
     OAuthIdentityAlreadyExists,
     UserAlreadyDeleted,
     UserNotFound,
+    UserProfilePrivate,    # ⭐ Day 14
+    UserUpdateForbidden,   # ⭐ Day 14
 )
 
 logger = get_logger(__name__)
@@ -34,7 +37,7 @@ def _error_response(status_code: int, code: str, message: str, **extra) -> JSONR
 
 
 # ─────────────────────────────────────────
-#  User 도메인 (Day 10)
+#  User 도메인 (Day 10 + Day 14)
 # ─────────────────────────────────────────
 
 
@@ -73,8 +76,40 @@ async def user_already_deleted_handler(
     return _error_response(410, "USER_ALREADY_DELETED", "이미 삭제된 사용자입니다")
 
 
+# ⭐ Day 14 - 권한 예외
+
+
+async def user_profile_private_handler(
+    request: Request, exc: UserProfilePrivate
+) -> JSONResponse:
+    """비공개 프로필 조회 시도 → 403."""
+    logger.info("user_profile_private", user_id=exc.user_id, path=request.url.path)
+    return _error_response(
+        403,
+        "USER_PROFILE_PRIVATE",
+        "비공개 프로필입니다. 접근 권한이 없습니다.",
+    )
+
+
+async def user_update_forbidden_handler(
+    request: Request, exc: UserUpdateForbidden
+) -> JSONResponse:
+    """본인 아닌 사용자 수정 시도 → 403."""
+    logger.warning(
+        "user_update_forbidden",
+        target_user_id=exc.user_id,
+        current_user_id=exc.current_user_id,
+        path=request.url.path,
+    )
+    return _error_response(
+        403,
+        "USER_UPDATE_FORBIDDEN",
+        "본인 정보만 수정할 수 있습니다.",
+    )
+
+
 # ─────────────────────────────────────────
-#  Auth 도메인 (Day 11)
+#  Auth 도메인 (Day 11 - 변경 없음)
 # ─────────────────────────────────────────
 
 
@@ -107,14 +142,13 @@ async def invalid_credentials_handler(
 
 
 # ─────────────────────────────────────────
-#  Kakao OAuth (Day 12 ⭐)
+#  Kakao OAuth (Day 12 - 변경 없음)
 # ─────────────────────────────────────────
 
 
 async def oauth_state_invalid_handler(
     request: Request, exc: OAuthStateInvalid
 ) -> JSONResponse:
-    """State 검증 실패 → 401 (CSRF 의심)."""
     logger.warning("oauth_state_invalid", path=request.url.path)
     return _error_response(
         401,
@@ -126,46 +160,20 @@ async def oauth_state_invalid_handler(
 async def kakao_token_exchange_failed_handler(
     request: Request, exc: KakaoTokenExchangeFailed
 ) -> JSONResponse:
-    """카카오 토큰 교환 실패 → 400 (잘못된 code).
-
-    원인 노출 X (보안). 상세는 서버 로그에만.
-    """
-    logger.warning(
-        "kakao_token_exchange_failed",
-        kakao_error=exc.error,
-        path=request.url.path,
-    )
-    return _error_response(
-        400,
-        "KAKAO_TOKEN_EXCHANGE_FAILED",
-        "카카오 인증에 실패했습니다. 다시 시도해주세요.",
-    )
+    logger.warning("kakao_token_exchange_failed", kakao_error=exc.error, path=request.url.path)
+    return _error_response(400, "KAKAO_TOKEN_EXCHANGE_FAILED", "카카오 인증에 실패했습니다. 다시 시도해주세요.")
 
 
 async def kakao_user_info_failed_handler(
     request: Request, exc: KakaoUserInfoFailed
 ) -> JSONResponse:
-    """카카오 사용자 정보 조회 실패 → 502 (외부 API 장애)."""
-    logger.warning(
-        "kakao_user_info_failed",
-        kakao_error=exc.error,
-        kakao_code=exc.code,
-        path=request.url.path,
-    )
-    return _error_response(
-        502,
-        "KAKAO_USER_INFO_FAILED",
-        "카카오 사용자 정보를 가져오지 못했습니다.",
-    )
+    logger.warning("kakao_user_info_failed", kakao_error=exc.error, path=request.url.path)
+    return _error_response(502, "KAKAO_USER_INFO_FAILED", "카카오 사용자 정보를 가져오지 못했습니다.")
 
 
 async def kakao_email_not_available_handler(
     request: Request, exc: KakaoEmailNotAvailable
 ) -> JSONResponse:
-    """이메일 동의 안 함 → 400.
-
-    사용자에게 이메일 동의가 필요함을 안내.
-    """
     logger.info("kakao_email_not_agreed", kakao_id=exc.kakao_id, path=request.url.path)
     return _error_response(
         400,
@@ -177,13 +185,36 @@ async def kakao_email_not_available_handler(
 async def kakao_api_error_handler(
     request: Request, exc: KakaoAPIError
 ) -> JSONResponse:
-    """카카오 API 통신 실패 → 502."""
     logger.error("kakao_api_error", error=str(exc), path=request.url.path)
-    return _error_response(
-        502,
-        "KAKAO_API_ERROR",
-        "카카오 서비스와의 통신에 문제가 발생했습니다. 잠시 후 다시 시도해주세요.",
+    return _error_response(502, "KAKAO_API_ERROR", "카카오 서비스와의 통신에 문제가 발생했습니다.")
+
+
+# ─────────────────────────────────────────
+#  Rate Limit (Day 14 ⭐ 추가)
+# ─────────────────────────────────────────
+
+
+async def rate_limit_exceeded_handler(
+    request: Request, exc: RateLimitExceeded
+) -> JSONResponse:
+    """Rate limit 초과 → 429.
+
+    slowapi 의 기본 핸들러를 우리 응답 형식에 맞춤.
+    Retry-After 헤더 자동 (slowapi).
+    """
+    logger.warning(
+        "rate_limit_exceeded",
+        path=request.url.path,
+        limit=str(exc.detail),
     )
+    response = _error_response(
+        429,
+        "RATE_LIMIT_EXCEEDED",
+        f"요청이 너무 많습니다. 잠시 후 다시 시도해주세요. (limit: {exc.detail})",
+    )
+    # Retry-After 헤더 (slowapi 가 자동 추가하지만 명시)
+    response.headers["Retry-After"] = "60"
+    return response
 
 
 # ─────────────────────────────────────────
@@ -195,11 +226,12 @@ def register_exception_handlers(app: FastAPI) -> None:
     # User 도메인
     app.add_exception_handler(EmailAlreadyExists, email_already_exists_handler)
     app.add_exception_handler(NicknameAlreadyExists, nickname_already_exists_handler)
-    app.add_exception_handler(
-        OAuthIdentityAlreadyExists, oauth_identity_already_exists_handler
-    )
+    app.add_exception_handler(OAuthIdentityAlreadyExists, oauth_identity_already_exists_handler)
     app.add_exception_handler(UserNotFound, user_not_found_handler)
     app.add_exception_handler(UserAlreadyDeleted, user_already_deleted_handler)
+    # ⭐ Day 14
+    app.add_exception_handler(UserProfilePrivate, user_profile_private_handler)
+    app.add_exception_handler(UserUpdateForbidden, user_update_forbidden_handler)
 
     # Auth 도메인 (Day 11)
     app.add_exception_handler(UserNotFoundForAuth, user_not_found_for_auth_handler)
@@ -207,9 +239,12 @@ def register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(RefreshTokenRevoked, refresh_token_revoked_handler)
     app.add_exception_handler(InvalidCredentials, invalid_credentials_handler)
 
-    # Kakao OAuth (Day 12 ⭐)
+    # Kakao OAuth (Day 12)
     app.add_exception_handler(OAuthStateInvalid, oauth_state_invalid_handler)
     app.add_exception_handler(KakaoTokenExchangeFailed, kakao_token_exchange_failed_handler)
     app.add_exception_handler(KakaoUserInfoFailed, kakao_user_info_failed_handler)
     app.add_exception_handler(KakaoEmailNotAvailable, kakao_email_not_available_handler)
     app.add_exception_handler(KakaoAPIError, kakao_api_error_handler)
+
+    # Rate Limit (Day 14 ⭐)
+    app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)

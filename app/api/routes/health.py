@@ -1,97 +1,104 @@
-"""헬스체크 엔드포인트.
-
-K8s probe 패턴:
-- /health/live  → Liveness:  "프로세스가 살아있는가" (재시작 트리거)
-- /health/ready → Readiness: "트래픽 받을 준비 됐는가" (Service 라우팅)
-
-Day 11B: Redis 의존성 추가.
-"""
+"""Health check 엔드포인트."""
 
 from datetime import UTC, datetime
-from typing import Literal
 
-from fastapi import APIRouter, Response, status
+from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel
 
+from sqlalchemy import text
 from app.core.config import get_settings
-from app.infra.db import ping_db
-from app.infra.redis import ping_redis
+from app.core.rate_limit import RateLimits, limiter
+from app.infra.db.engine import get_engine
+from app.infra.redis import get_redis
 
 router = APIRouter(prefix="/health", tags=["health"])
 
 
-class HealthResponse(BaseModel):
+class HealthLiveResponse(BaseModel):
     status: str
     app: str
     version: str
     environment: str
-    timestamp: str
+    timestamp: datetime
 
 
-class ReadinessResponse(BaseModel):
-    status: Literal["ready", "not_ready"]
+class HealthReadyResponse(BaseModel):
+    status: str
     app: str
     version: str
     environment: str
-    timestamp: str
-    dependencies: dict[str, Literal["ok", "fail"]]
+    timestamp: datetime
+    dependencies: dict[str, str]
 
 
 @router.get(
     "/live",
-    status_code=status.HTTP_200_OK,
-    response_model=HealthResponse,
+    response_model=HealthLiveResponse,
+    summary="Liveness probe",
 )
-async def liveness() -> HealthResponse:
-    """프로세스 생존 여부."""
+@limiter.limit(RateLimits.HEALTH)
+async def health_live(request: Request) -> HealthLiveResponse:
+    """프로세스 동작 여부.
+
+    Rate limit 1000/min — 실제 무제한.
+    """
     settings = get_settings()
-    return HealthResponse(
+    return HealthLiveResponse(
         status="alive",
         app=settings.app_name,
         version=settings.app_version,
         environment=settings.environment,
-        timestamp=datetime.now(UTC).isoformat(),
+        timestamp=datetime.now(UTC),
     )
 
 
 @router.get(
     "/ready",
-    response_model=ReadinessResponse,
-    responses={
-        503: {"model": ReadinessResponse},
-    },
+    response_model=HealthReadyResponse,
+    summary="Readiness probe",
 )
-async def readiness(response: Response) -> ReadinessResponse:
-    """트래픽 수신 준비 여부.
-
-    의존성:
-    - PostgreSQL (Day 8 부터)
-    - Redis (Day 11B 부터)
-    """
-    settings = get_settings()
-
-    # 의존성 병렬 확인 (둘 다 비동기라 가능)
+@limiter.limit(RateLimits.HEALTH)
+async def health_ready(request: Request) -> HealthReadyResponse:
+    """의존성 (DB, Redis) 상태 포함."""
     import asyncio
 
-    db_ok, redis_ok = await asyncio.gather(
-        ping_db(),
-        ping_redis(),
-    )
+    settings = get_settings()
+    dependencies: dict[str, str] = {}
 
-    dependencies = {
-        "database": "ok" if db_ok else "fail",
-        "redis": "ok" if redis_ok else "fail",
-    }
+    async def _check_db() -> None:
+        try:
+            engine = get_engine()
+            async with engine.connect() as conn:
+                await conn.execute(text("SELECT 1"))
+            dependencies["database"] = "ok"
+        except Exception as e:
+            dependencies["database"] = f"error: {type(e).__name__}"
+
+    async def _check_redis() -> None:
+        try:
+            redis = get_redis()
+            await redis.ping()
+            dependencies["redis"] = "ok"
+        except Exception as e:
+            dependencies["redis"] = f"error: {type(e).__name__}"
+
+    await asyncio.gather(_check_db(), _check_redis())
 
     all_ok = all(v == "ok" for v in dependencies.values())
     if not all_ok:
-        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "status": "not_ready",
+                "dependencies": dependencies,
+            },
+        )
 
-    return ReadinessResponse(
-        status="ready" if all_ok else "not_ready",
+    return HealthReadyResponse(
+        status="ready",
         app=settings.app_name,
         version=settings.app_version,
         environment=settings.environment,
-        timestamp=datetime.now(UTC).isoformat(),
+        timestamp=datetime.now(UTC),
         dependencies=dependencies,
     )

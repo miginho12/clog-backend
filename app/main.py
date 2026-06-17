@@ -6,89 +6,88 @@ from typing import AsyncIterator
 import httpx
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi.middleware import SlowAPIMiddleware
 
 from app.api.exception_handlers import register_exception_handlers
 from app.api.routes import auth, health, users
 from app.core.config import get_settings
-from app.core.logging import get_logger, setup_logging
-from app.infra.db import close_engine, init_engine
-from app.infra.redis import close_redis, init_redis
+from app.core.logging import setup_logging, get_logger
+from app.core.rate_limit import limiter
+from app.infra.db.engine import close_engine, get_engine, init_engine
+from app.infra.redis import close_redis, get_redis, init_redis
 
 logger = get_logger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    setup_logging()
+    """앱 시작/종료 시 리소스 관리."""
     settings = get_settings()
+    setup_logging()
 
     logger.info(
         "app_starting",
         app=settings.app_name,
         version=settings.app_version,
         environment=settings.environment,
-        jwt_algorithm=settings.jwt_algorithm,
+        simulation_login_enabled=settings.is_simulation_login_enabled,
+        cors_origins=settings.cors_origins,
     )
 
-    # JWT 키 검증
-    try:
-        settings.get_jwt_private_key()
-        settings.get_jwt_public_key()
-        logger.info("jwt_keys_loaded")
-    except (ValueError, FileNotFoundError) as e:
-        logger.error("jwt_keys_failed", error=str(e))
-        raise
-
-    # Redis 초기화
+    # 리소스 초기화
+    init_engine()
     init_redis()
 
-    # DB 초기화
-    init_engine()
+    # httpx (카카오 OAuth)
+    httpx_client = httpx.AsyncClient(timeout=10.0)
+    app.state.http_client = httpx_client
 
-    # HTTP 클라이언트 초기화 (⭐ Day 12 - 카카오 API 호출용)
-    # 앱 라이프사이클 동안 단일 클라이언트 재사용 (연결 풀)
-    http_client = httpx.AsyncClient(
-        timeout=httpx.Timeout(connect=5.0, read=10.0, write=5.0, pool=5.0),
-        limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
-    )
-    app.state.http_client = http_client
-    logger.info("http_client_initialized")
+    logger.info("app_started")
 
     yield
 
-    # ── Shutdown ──
     logger.info("app_shutting_down")
-    await http_client.aclose()
-    await close_engine()
+    await httpx_client.aclose()
     await close_redis()
+    await close_engine()
+    logger.info("app_shutdown_complete")
 
 
 def create_app() -> FastAPI:
     settings = get_settings()
 
     app = FastAPI(
-        title="Clog API",
-        description="클라이밍 기록 + 커뮤니티 서비스",
+        title=settings.app_name,
         version=settings.app_version,
-        docs_url="/docs" if not settings.is_production else None,
-        redoc_url="/redoc" if not settings.is_production else None,
         lifespan=lifespan,
     )
 
+    # ── Rate Limiter (Day 14 ⭐) ──
+    # slowapi 의 limiter 인스턴스를 앱 state 에 등록
+    # SlowAPIMiddleware 가 자동으로 각 요청 검사
+    app.state.limiter = limiter
+    app.add_middleware(SlowAPIMiddleware)
+
+    # ── CORS (Day 14 ⭐ 강화) ──
+    # 명시된 origin 만 허용 (Day 13 까지 allow_origins=["*"] 였다면 강화)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
         allow_credentials=True,
-        allow_methods=["*"],
+        allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["*"],
+        max_age=600,  # preflight 캐시 10분
     )
 
-    app.include_router(health.router)
-    app.include_router(users.router)
-    app.include_router(auth.router)
-
+    # ── 예외 핸들러 ──
     register_exception_handlers(app)
 
+    # ── 라우터 ──
+    app.include_router(health.router)
+    app.include_router(auth.router)
+    app.include_router(users.router)
+
+    # ── 루트 ──
     @app.get("/", tags=["root"])
     async def root() -> dict[str, str]:
         return {
@@ -96,7 +95,7 @@ def create_app() -> FastAPI:
             "app": settings.app_name,
             "version": settings.app_version,
             "environment": settings.environment,
-            "docs": "/docs" if not settings.is_production else "disabled in prod",
+            "docs": "/docs",
         }
 
     return app

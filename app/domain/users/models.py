@@ -92,6 +92,14 @@ class User(Base):
         comment="프로바이더의 사용자 ID",
     )
 
+    is_public: Mapped[bool] = mapped_column(
+        "is_public",
+        nullable=False,
+        default=True,
+        server_default=text("true"),
+        comment="프로필 공개 여부 (Day 14)",
+    )
+
     # ── 메타 (자동 관리) ──
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

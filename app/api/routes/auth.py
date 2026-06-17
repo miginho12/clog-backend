@@ -1,21 +1,21 @@
-"""Auth 엔드포인트.
+"""Auth 엔드포인트 (Day 14 보안 강화).
 
-기존 (Day 11):
-- POST /auth/login         시뮬레이션 (deprecated 예정)
-- POST /auth/refresh
-- POST /auth/logout
-- POST /auth/logout-all
-
-추가 (Day 12 ⭐):
-- GET  /auth/kakao/login     카카오 로그인 시작 (302 Redirect)
-- GET  /auth/kakao/callback  카카오 콜백 처리 → JWT 응답
+[Day 14 변경]
+- POST /auth/login: local 환경에서만 활성화 (시뮬레이션, dev/prod 비활성)
+- 모든 엔드포인트에 rate limit 적용
+- /auth/kakao/login: 10/min (CSRF + 부하)
+- /auth/refresh: 30/min
+- /auth/logout: 60/min
+- /auth/logout-all: 10/min
 """
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, HTTPException, Query, Request, status
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
 from app.api.dependencies import CurrentUserDep
+from app.core.config import get_settings
+from app.core.rate_limit import RateLimits, limiter
 from app.domain.auth.dependencies import AuthServiceDep, KakaoOAuthServiceDep
 from app.domain.auth.schemas import (
     AccessTokenResponse,
@@ -30,19 +30,43 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 # ─────────────────────────────────────────
-#  기존 엔드포인트 (Day 11)
+#  /auth/login (Day 14 ⭐ 환경별 비활성화)
 # ─────────────────────────────────────────
 
 
 @router.post(
     "/login",
     response_model=TokenResponse,
-    summary="로그인 (시뮬레이션 - Day 12 이후 deprecated)",
-    description="user_id 직접 받기 — 개발/테스트용. 운영에선 /auth/kakao/* 사용.",
+    summary="로그인 (local 환경 전용, 시뮬레이션)",
+    description=(
+        "⚠️ 시뮬레이션 엔드포인트 — local 환경에서만 활성. "
+        "운영(dev/prod)에서는 404 반환. "
+        "운영에선 카카오 OAuth (/auth/kakao/login) 사용."
+    ),
 )
-async def login(payload: LoginRequest, service: AuthServiceDep) -> TokenResponse:
+@limiter.limit(RateLimits.REFRESH)  # 시뮬레이션이라 적당히
+async def login(
+    request: Request, payload: LoginRequest, service: AuthServiceDep
+) -> TokenResponse:
+    """시뮬레이션 로그인 (local 환경 전용).
+
+    Raises:
+        404: dev/prod 환경에서 호출 시
+    """
+    settings = get_settings()
+    if not settings.is_simulation_login_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Endpoint not available in this environment",
+        )
+
     pair = await service.login(payload.user_id)
     return TokenResponse.from_pair(pair)
+
+
+# ─────────────────────────────────────────
+#  Refresh & Logout (rate limit 추가)
+# ─────────────────────────────────────────
 
 
 @router.post(
@@ -50,13 +74,12 @@ async def login(payload: LoginRequest, service: AuthServiceDep) -> TokenResponse
     response_model=AccessTokenResponse,
     summary="Access token 갱신",
 )
+@limiter.limit(RateLimits.REFRESH)
 async def refresh_token(
-    payload: RefreshRequest, service: AuthServiceDep
+    request: Request, payload: RefreshRequest, service: AuthServiceDep
 ) -> AccessTokenResponse:
-    from app.core.config import get_settings
-
-    new_access = await service.refresh_access_token(payload.refresh_token)
     settings = get_settings()
+    new_access = await service.refresh_access_token(payload.refresh_token)
     return AccessTokenResponse(
         access_token=new_access,
         expires_in=settings.jwt_access_token_expire_minutes * 60,
@@ -68,7 +91,10 @@ async def refresh_token(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="로그아웃",
 )
-async def logout(payload: LogoutRequest, service: AuthServiceDep) -> None:
+@limiter.limit(RateLimits.LOGOUT)
+async def logout(
+    request: Request, payload: LogoutRequest, service: AuthServiceDep
+) -> None:
     await service.logout(payload.refresh_token)
 
 
@@ -77,40 +103,38 @@ async def logout(payload: LogoutRequest, service: AuthServiceDep) -> None:
     status_code=status.HTTP_200_OK,
     summary="모든 디바이스 로그아웃",
 )
-async def logout_all(user: CurrentUserDep, service: AuthServiceDep) -> dict[str, int]:
+@limiter.limit(RateLimits.LOGOUT_ALL)
+async def logout_all(
+    request: Request, user: CurrentUserDep, service: AuthServiceDep
+) -> dict[str, int]:
     count = await service.logout_all(user.id)
     return {"revoked_count": count}
 
 
 # ─────────────────────────────────────────
-#  Kakao OAuth (⭐ Day 12)
+#  Kakao OAuth (rate limit 추가)
 # ─────────────────────────────────────────
 
 
 @router.get(
     "/kakao/login",
     summary="카카오 로그인 시작",
-    description=(
-        "카카오 로그인 페이지로 302 Redirect 합니다. "
-        "사용자는 카카오에서 로그인 후 /auth/kakao/callback 으로 돌아옵니다."
-    ),
+    description="카카오 로그인 페이지로 302 Redirect.",
     responses={
         302: {"description": "카카오 로그인 페이지로 리다이렉트"},
+        429: {"description": "Too many requests"},
     },
 )
-async def kakao_login_initiate(service: KakaoOAuthServiceDep) -> RedirectResponse:
-    """카카오 로그인 시작.
-
-    1. State 생성 (CSRF 방어, Redis 5분 저장)
-    2. 카카오 authorize URL 생성
-    3. 302 Redirect → 사용자 브라우저가 카카오로 이동
-    """
+@limiter.limit(RateLimits.KAKAO_LOGIN)
+async def kakao_login_initiate(
+    request: Request, service: KakaoOAuthServiceDep
+) -> RedirectResponse:
     authorize_url, _state = await service.initiate_login()
     return RedirectResponse(url=authorize_url, status_code=302)
 
 
 class KakaoCallbackResponse(BaseModel):
-    """카카오 콜백 응답 (Q6 의 옵션 a: JSON 응답)."""
+    """카카오 콜백 응답."""
 
     access_token: str
     refresh_token: str
@@ -124,33 +148,15 @@ class KakaoCallbackResponse(BaseModel):
     "/kakao/callback",
     response_model=KakaoCallbackResponse,
     summary="카카오 로그인 콜백",
-    description=(
-        "카카오에서 인증 완료 후 호출되는 콜백. "
-        "code 와 state 를 받아 우리 시스템 JWT 발급."
-    ),
-    responses={
-        200: {"description": "로그인 성공 — 우리 시스템 JWT 발급"},
-        400: {"description": "잘못된 code 또는 state"},
-        401: {"description": "state 검증 실패 (CSRF 의심)"},
-        502: {"description": "카카오 API 통신 실패"},
-    },
 )
+@limiter.limit(RateLimits.KAKAO_CALLBACK)
 async def kakao_login_callback(
+    request: Request,
     service: KakaoOAuthServiceDep,
     code: str = Query(..., description="카카오 인증 코드"),
     state: str = Query(..., description="CSRF 방어 state"),
 ) -> KakaoCallbackResponse:
-    """카카오 콜백 처리.
-
-    흐름:
-    1. State 검증 (CSRF)
-    2. Code → 카카오 access_token 교환
-    3. 카카오 사용자 정보 조회
-    4. User 자동 생성/조회
-    5. 우리 시스템 JWT 발급
-    """
     pair, user, is_new_user = await service.handle_callback(code=code, state=state)
-
     return KakaoCallbackResponse(
         access_token=pair.access_token,
         refresh_token=pair.refresh_token,

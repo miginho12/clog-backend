@@ -28,8 +28,17 @@ class Settings(BaseSettings):
     # ── 로깅 ──
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
 
-    # ── CORS ──
-    cors_origins: list[str] = Field(default=["http://localhost:3000"])
+    # ── CORS (Day 14 ⭐ 강화) ──
+    # 환경별 허용 origin
+    # local:  로컬 프론트엔드 개발용
+    # dev:    K8s + Tailscale Funnel 환경
+    # prod:   향후 운영 도메인
+    cors_origins: list[str] = Field(
+        default=[
+            "http://localhost:3000",         # Next.js 로컬 개발
+            "https://clog.tail099985.ts.net",  # Tailscale Funnel
+        ]
+    )
 
     # ── 데이터베이스 ──
     db_host: str = Field(default="localhost")
@@ -99,23 +108,18 @@ class Settings(BaseSettings):
             return f"redis://:***@{self.redis_host}:{self.redis_port}/{self.redis_db}"
         return f"redis://{self.redis_host}:{self.redis_port}/{self.redis_db}"
 
-    # ── Kakao OAuth (⭐ Day 12 추가) ──
-    kakao_client_id: str = Field(default="", description="카카오 REST API 키")
-    kakao_client_secret: str = Field(
-        default="", description="카카오 Client Secret (선택, 등록 시 사용)"
-    )
+    # ── Kakao OAuth ──
+    kakao_client_id: str = Field(default="")
+    kakao_client_secret: str = Field(default="")
     kakao_redirect_uri: str = Field(
-        default="http://localhost:8000/auth/kakao/callback",
-        description="카카오에 등록된 Redirect URI",
+        default="http://localhost:8000/auth/kakao/callback"
     )
 
-    # 카카오 API 엔드포인트 (변경 가능성 매우 낮음)
     kakao_authorize_url: str = "https://kauth.kakao.com/oauth/authorize"
     kakao_token_url: str = "https://kauth.kakao.com/oauth/token"
     kakao_user_info_url: str = "https://kapi.kakao.com/v2/user/me"
 
-    # OAuth state 의 Redis TTL (CSRF 방어)
-    oauth_state_ttl_seconds: int = Field(default=300, description="state 유효 시간 (초)")
+    oauth_state_ttl_seconds: int = Field(default=300)
 
     # ── 메타 ──
     @property
@@ -124,6 +128,15 @@ class Settings(BaseSettings):
 
     @property
     def is_local(self) -> bool:
+        return self.environment == "local"
+
+    @property
+    def is_simulation_login_enabled(self) -> bool:
+        """⭐ Day 14: /auth/login 시뮬레이션 엔드포인트 활성화 여부.
+
+        local 환경에서만 활성화 (개발 편의).
+        dev/prod 에선 비활성 (보안).
+        """
         return self.environment == "local"
 
     def get_jwt_private_key(self) -> str:
