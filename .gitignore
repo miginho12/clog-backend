@@ -53,3 +53,4 @@ jwt-keys/
 *.pem
 *.key
 jwt-keys/
+.env.example
