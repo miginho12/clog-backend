@@ -7,6 +7,7 @@ import httpx
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi.middleware import SlowAPIMiddleware
+from starlette_prometheus import metrics, PrometheusMiddleware
 
 from app.api.exception_handlers import register_exception_handlers
 from app.api.routes import auth, health, users
@@ -67,6 +68,10 @@ def create_app() -> FastAPI:
     # SlowAPIMiddleware 가 자동으로 각 요청 검사
     app.state.limiter = limiter
     app.add_middleware(SlowAPIMiddleware)
+
+    # ⭐ Day 15: Prometheus metrics
+    app.add_middleware(PrometheusMiddleware)
+    app.add_route("/metrics", metrics)
 
     # ── CORS (Day 14 ⭐ 강화) ──
     # 명시된 origin 만 허용 (Day 13 까지 allow_origins=["*"] 였다면 강화)

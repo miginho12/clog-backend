@@ -36,6 +36,7 @@ dependencies = [
     # Rate limiting (Day 14 ⭐ 추가)
     # slowapi: FastAPI 친화 + Redis 백엔드 지원
     "slowapi>=0.1.9",
+    "starlette-prometheus>=0.10.0",
 ]
 
 [dependency-groups]
