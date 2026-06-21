@@ -1,11 +1,14 @@
 """전역 예외 핸들러."""
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
 
 from app.core.logging import get_logger
 from app.domain.auth.exceptions import (
+    EmailAlreadyRegistered,
+    LocalLoginNotAvailable,
+    NicknameAlreadyTaken,
     InvalidCredentials,
     KakaoAPIError,
     KakaoEmailNotAvailable,
@@ -222,6 +225,37 @@ async def rate_limit_exceeded_handler(
 # ─────────────────────────────────────────
 
 
+async def email_already_registered_handler(
+    request: Request, exc: EmailAlreadyRegistered
+) -> JSONResponse:
+    return _error_response(
+        status_code=status.HTTP_409_CONFLICT,
+        code="email_already_registered",
+        message="이미 가입된 이메일입니다",
+    )
+
+
+async def nickname_already_taken_handler(
+    request: Request, exc: NicknameAlreadyTaken
+) -> JSONResponse:
+    return _error_response(
+        status_code=status.HTTP_409_CONFLICT,
+        code="nickname_already_taken",
+        message="이미 사용 중인 닉네임입니다",
+    )
+
+
+async def local_login_not_available_handler(
+    request: Request, exc: LocalLoginNotAvailable
+) -> JSONResponse:
+    # 계정 열거 방어: 구체적 사유를 노출하지 않음
+    return _error_response(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        code="invalid_credentials",
+        message="이메일 또는 비밀번호가 올바르지 않습니다",
+    )
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     # User 도메인
     app.add_exception_handler(EmailAlreadyExists, email_already_exists_handler)
@@ -238,6 +272,9 @@ def register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(RefreshTokenNotFound, refresh_token_not_found_handler)
     app.add_exception_handler(RefreshTokenRevoked, refresh_token_revoked_handler)
     app.add_exception_handler(InvalidCredentials, invalid_credentials_handler)
+    app.add_exception_handler(EmailAlreadyRegistered, email_already_registered_handler)
+    app.add_exception_handler(NicknameAlreadyTaken, nickname_already_taken_handler)
+    app.add_exception_handler(LocalLoginNotAvailable, local_login_not_available_handler)
 
     # Kakao OAuth (Day 12)
     app.add_exception_handler(OAuthStateInvalid, oauth_state_invalid_handler)

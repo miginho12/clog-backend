@@ -82,12 +82,15 @@ def get_kakao_client(
 
 
 def get_auth_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
     refresh_repo: Annotated[
         RedisRefreshTokenRepository, Depends(get_refresh_token_repository)
     ],
     user_repo: Annotated[UserRepository, Depends(get_user_repository)],
 ) -> AuthService:
-    return AuthService(refresh_repo=refresh_repo, user_repo=user_repo)
+    return AuthService(
+        session=session, refresh_repo=refresh_repo, user_repo=user_repo
+    )
 
 
 def get_kakao_oauth_service(

@@ -101,3 +101,35 @@ async def get_current_user(
 
 # 짧은 사용을 위한 타입 alias
 CurrentUserDep = Annotated[User, Depends(get_current_user)]
+
+
+# ─────────────────────────────────────────
+#  Admin 가드 (Day 17 ⭐)
+# ─────────────────────────────────────────
+
+
+async def require_admin(user: CurrentUserDep) -> User:
+    """관리자 권한 필수.
+
+    get_current_user 로 인증을 먼저 통과한 뒤, is_admin 을 확인.
+    일반 사용자가 admin 전용 엔드포인트 접근 시 403.
+
+    사용:
+        @router.get("/admin/users")
+        async def list_all(admin: AdminUserDep):
+            ...
+
+    Raises:
+        HTTPException(403): is_admin=False 인 경우
+    """
+    if not user.is_admin:
+        logger.warning("admin_access_denied", user_id=str(user.id))
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="admin privileges required",
+        )
+    return user
+
+
+# 짧은 사용을 위한 타입 alias
+AdminUserDep = Annotated[User, Depends(require_admin)]

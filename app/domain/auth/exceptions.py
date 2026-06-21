@@ -94,3 +94,41 @@ class OAuthStateInvalid(AuthDomainError):
     """
 
     pass
+
+
+# ─────────────────────────────────────────
+#  자체 회원가입 (Day 17 ⭐ 추가)
+# ─────────────────────────────────────────
+
+
+class EmailAlreadyRegistered(AuthDomainError):
+    """이미 가입된 이메일로 회원가입 시도.
+
+    OAuth 가입자와 동일 이메일인 경우도 포함.
+    보안상 "이미 가입된 이메일" 정도만 노출 (어떤 provider 인지는 숨김).
+    """
+
+    def __init__(self, email: str):
+        self.email = email
+        super().__init__(f"email already registered: {email}")
+
+
+class NicknameAlreadyTaken(AuthDomainError):
+    """이미 사용 중인 닉네임으로 회원가입 시도."""
+
+    def __init__(self, nickname: str):
+        self.nickname = nickname
+        super().__init__(f"nickname already taken: {nickname}")
+
+
+class LocalLoginNotAvailable(AuthDomainError):
+    """local 로그인 불가.
+
+    원인:
+    - 해당 이메일이 OAuth(kakao 등)로만 가입됨 → password_hash 가 NULL
+    - 이메일/비밀번호 불일치
+
+    보안상 둘을 구분하지 않고 동일 메시지로 응답 (계정 존재 여부 숨김).
+    """
+
+    pass

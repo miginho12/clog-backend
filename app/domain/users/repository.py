@@ -113,7 +113,8 @@ class UserRepository:
         email: str,
         nickname: str,
         auth_provider: str,
-        auth_provider_id: str,
+        auth_provider_id: str | None = None,
+        password_hash: str | None = None,
         profile_image_url: str | None = None,
         bio: str | None = None,
     ) -> User:
@@ -122,6 +123,7 @@ class UserRepository:
             nickname=nickname,
             auth_provider=auth_provider,
             auth_provider_id=auth_provider_id,
+            password_hash=password_hash,
             profile_image_url=profile_image_url,
             bio=bio,
         )

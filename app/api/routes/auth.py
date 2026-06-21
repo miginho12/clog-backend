@@ -25,13 +25,112 @@ from app.domain.auth.schemas import (
     TokenResponse,
 )
 from app.domain.users.schemas import UserResponse
+from app.domain.auth.local_schemas import LocalLoginRequest, SignupRequest
+
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 # ─────────────────────────────────────────
+#  자체 회원가입/로그인 응답 (Day 17 ⭐)
+# ─────────────────────────────────────────
+
+
+class LocalAuthResponse(BaseModel):
+    """자체 회원가입/로그인 공통 응답.
+
+    카카오 콜백 응답(KakaoCallbackResponse)과 동일 구조.
+    프론트가 동일하게 처리할 수 있도록 통일.
+    """
+
+    access_token: str
+    refresh_token: str
+    token_type: str = "Bearer"
+    expires_in: int
+    user: UserResponse
+
+
+# ─────────────────────────────────────────
 #  /auth/login (Day 14 ⭐ 환경별 비활성화)
 # ─────────────────────────────────────────
+
+
+# ─────────────────────────────────────────
+#  자체 회원가입 (Day 17 ⭐)
+# ─────────────────────────────────────────
+
+
+@router.post(
+    "/signup",
+    response_model=LocalAuthResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="자체 회원가입 (이메일 + 비밀번호)",
+    description=(
+        "카카오 없이 이메일/비밀번호로 가입. "
+        "비밀번호 정책: 최소 12자 + 영문/숫자/특수문자. "
+        "가입 즉시 로그인 상태(토큰 발급)."
+    ),
+)
+@limiter.limit(RateLimits.KAKAO_LOGIN)
+async def signup(
+    request: Request, payload: SignupRequest, service: AuthServiceDep
+) -> LocalAuthResponse:
+    """자체 회원가입.
+
+    Raises:
+        409: 이메일/닉네임 중복 (예외 핸들러에서 변환)
+        422: 비밀번호 정책 위반 (스키마 검증)
+    """
+    pair, user = await service.signup(
+        email=payload.email,
+        password=payload.password,
+        nickname=payload.nickname,
+        profile_image_url=payload.profile_image_url,
+    )
+    return LocalAuthResponse(
+        access_token=pair.access_token,
+        refresh_token=pair.refresh_token,
+        token_type=pair.token_type,
+        expires_in=pair.expires_in,
+        user=UserResponse.model_validate(user),
+    )
+
+
+# ─────────────────────────────────────────
+#  자체 로그인 (Day 17 ⭐)
+# ─────────────────────────────────────────
+
+
+@router.post(
+    "/login/local",
+    response_model=LocalAuthResponse,
+    summary="자체 로그인 (이메일 + 비밀번호)",
+    description=(
+        "자체 가입자 전용 로그인. "
+        "보안상 이메일 없음/비번 불일치/OAuth 전용 계정을 "
+        "구분하지 않고 동일하게 401 응답."
+    ),
+)
+@limiter.limit(RateLimits.KAKAO_LOGIN)
+async def login_local(
+    request: Request, payload: LocalLoginRequest, service: AuthServiceDep
+) -> LocalAuthResponse:
+    """자체 로그인.
+
+    Raises:
+        401: 인증 실패 (예외 핸들러에서 변환)
+    """
+    pair, user = await service.local_login(
+        email=payload.email,
+        password=payload.password,
+    )
+    return LocalAuthResponse(
+        access_token=pair.access_token,
+        refresh_token=pair.refresh_token,
+        token_type=pair.token_type,
+        expires_in=pair.expires_in,
+        user=UserResponse.model_validate(user),
+    )
 
 
 @router.post(
