@@ -114,6 +114,9 @@ class Settings(BaseSettings):
     kakao_redirect_uri: str = Field(
         default="http://localhost:8000/auth/kakao/callback"
     )
+    # 카카오 콜백 처리 후 사용자를 돌려보낼 프론트엔드 주소
+    # 백엔드가 토큰을 fragment로 붙여 {frontend_url}/auth/callback 로 302
+    frontend_url: str = Field(default="http://localhost:5173")
 
     kakao_authorize_url: str = "https://kauth.kakao.com/oauth/authorize"
     kakao_token_url: str = "https://kauth.kakao.com/oauth/token"

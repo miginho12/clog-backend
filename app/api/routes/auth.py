@@ -245,8 +245,13 @@ class KakaoCallbackResponse(BaseModel):
 
 @router.get(
     "/kakao/callback",
-    response_model=KakaoCallbackResponse,
     summary="카카오 로그인 콜백",
+    description=(
+        "카카오가 인가 코드를 들고 돌아오는 곳. "
+        "토큰을 생성한 뒤 프론트엔드로 302 리다이렉트한다. "
+        "토큰은 URL fragment(#)에 담아 전달 (서버 로그/Referer 노출 방지)."
+    ),
+    responses={302: {"description": "프론트엔드 콜백 페이지로 리다이렉트"}},
 )
 @limiter.limit(RateLimits.KAKAO_CALLBACK)
 async def kakao_login_callback(
@@ -254,13 +259,17 @@ async def kakao_login_callback(
     service: KakaoOAuthServiceDep,
     code: str = Query(..., description="카카오 인증 코드"),
     state: str = Query(..., description="CSRF 방어 state"),
-) -> KakaoCallbackResponse:
+) -> RedirectResponse:
     pair, user, is_new_user = await service.handle_callback(code=code, state=state)
-    return KakaoCallbackResponse(
-        access_token=pair.access_token,
-        refresh_token=pair.refresh_token,
-        token_type=pair.token_type,
-        expires_in=pair.expires_in,
-        user=UserResponse.model_validate(user),
-        is_new_user=is_new_user,
+
+    settings = get_settings()
+    # 토큰을 fragment(#)에 담아 프론트 콜백 페이지로 리다이렉트
+    # fragment 는 서버로 전송되지 않아 로그/Referer 에 안 남음
+    fragment = (
+        f"access_token={pair.access_token}"
+        f"&refresh_token={pair.refresh_token}"
+        f"&expires_in={pair.expires_in}"
+        f"&is_new={str(is_new_user).lower()}"
     )
+    redirect_url = f"{settings.frontend_url}/auth/callback#{fragment}"
+    return RedirectResponse(url=redirect_url, status_code=302)
