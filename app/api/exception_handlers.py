@@ -5,6 +5,10 @@ from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
 
 from app.core.logging import get_logger
+from app.domain.climbing.exceptions import (
+    ClimbingLogForbidden,
+    ClimbingLogNotFound,
+)
 from app.domain.auth.exceptions import (
     EmailAlreadyRegistered,
     LocalLoginNotAvailable,
@@ -256,6 +260,26 @@ async def local_login_not_available_handler(
     )
 
 
+async def climbing_log_not_found_handler(
+    request: Request, exc: ClimbingLogNotFound
+) -> JSONResponse:
+    return _error_response(
+        status_code=status.HTTP_404_NOT_FOUND,
+        code="climbing_log_not_found",
+        message="기록을 찾을 수 없습니다",
+    )
+
+
+async def climbing_log_forbidden_handler(
+    request: Request, exc: ClimbingLogForbidden
+) -> JSONResponse:
+    return _error_response(
+        status_code=status.HTTP_403_FORBIDDEN,
+        code="climbing_log_forbidden",
+        message="본인의 기록만 수정/삭제할 수 있습니다",
+    )
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     # User 도메인
     app.add_exception_handler(EmailAlreadyExists, email_already_exists_handler)
@@ -275,6 +299,8 @@ def register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(EmailAlreadyRegistered, email_already_registered_handler)
     app.add_exception_handler(NicknameAlreadyTaken, nickname_already_taken_handler)
     app.add_exception_handler(LocalLoginNotAvailable, local_login_not_available_handler)
+    app.add_exception_handler(ClimbingLogNotFound, climbing_log_not_found_handler)
+    app.add_exception_handler(ClimbingLogForbidden, climbing_log_forbidden_handler)
 
     # Kakao OAuth (Day 12)
     app.add_exception_handler(OAuthStateInvalid, oauth_state_invalid_handler)
