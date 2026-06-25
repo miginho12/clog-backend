@@ -13,6 +13,7 @@ Base.metadata 에 등록됨 → autogenerate 가 감지.
 from app.infra.db.base import Base
 from app.domain.users.models import User  # noqa: F401
 from app.domain.climbing.models import ClimbingLog  # noqa: F401
+from app.domain.grade.models import GymGradeSystem  # noqa: F401
 
 # 다음 세션에 추가될 모델들:
 # from app.domain.gyms.models import Gym  # noqa: F401
@@ -23,4 +24,5 @@ __all__ = [
     "Base",
     "User",
     "ClimbingLog",
+    "GymGradeSystem",
 ]
