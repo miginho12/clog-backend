@@ -6,6 +6,7 @@ from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.grade.repository import GradeRepository
+from app.domain.grade.service import GradeService
 from app.infra.db import get_session
 
 
@@ -16,3 +17,12 @@ def get_grade_repository(
 
 
 GradeRepositoryDep = Annotated[GradeRepository, Depends(get_grade_repository)]
+
+
+def get_grade_service(
+    repository: Annotated[GradeRepository, Depends(get_grade_repository)],
+) -> GradeService:
+    return GradeService(repo=repository)
+
+
+GradeServiceDep = Annotated[GradeService, Depends(get_grade_service)]

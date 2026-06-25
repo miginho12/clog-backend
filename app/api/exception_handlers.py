@@ -5,23 +5,26 @@ from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
 
 from app.core.logging import get_logger
-from app.domain.climbing.exceptions import (
-    ClimbingLogForbidden,
-    ClimbingLogNotFound,
-)
 from app.domain.auth.exceptions import (
     EmailAlreadyRegistered,
-    LocalLoginNotAvailable,
-    NicknameAlreadyTaken,
     InvalidCredentials,
     KakaoAPIError,
     KakaoEmailNotAvailable,
     KakaoTokenExchangeFailed,
     KakaoUserInfoFailed,
+    LocalLoginNotAvailable,
+    NicknameAlreadyTaken,
     OAuthStateInvalid,
     RefreshTokenNotFound,
     RefreshTokenRevoked,
     UserNotFoundForAuth,
+)
+from app.domain.climbing.exceptions import (
+    ClimbingLogForbidden,
+    ClimbingLogNotFound,
+)
+from app.domain.grade.exceptions import (
+    GymGradeSystemNotFound,
 )
 from app.domain.users.exceptions import (
     EmailAlreadyExists,
@@ -29,8 +32,8 @@ from app.domain.users.exceptions import (
     OAuthIdentityAlreadyExists,
     UserAlreadyDeleted,
     UserNotFound,
-    UserProfilePrivate,    # ⭐ Day 14
-    UserUpdateForbidden,   # ⭐ Day 14
+    UserProfilePrivate,  # ⭐ Day 14
+    UserUpdateForbidden,  # ⭐ Day 14
 )
 
 logger = get_logger(__name__)
@@ -280,6 +283,18 @@ async def climbing_log_forbidden_handler(
     )
 
 
+async def gym_grade_system_not_found_handler(
+    request: Request, exc: GymGradeSystemNotFound
+) -> JSONResponse:
+    # 미등록 짐 → 프론트가 details.gym_name 으로 '색체계 등록' 유도 (구현 6)
+    return _error_response(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        code="gym_grade_system_not_found",
+        message="등록되지 않은 암장입니다",
+        gym_name=exc.gym_name,
+    )
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     # User 도메인
     app.add_exception_handler(EmailAlreadyExists, email_already_exists_handler)
@@ -301,6 +316,9 @@ def register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(LocalLoginNotAvailable, local_login_not_available_handler)
     app.add_exception_handler(ClimbingLogNotFound, climbing_log_not_found_handler)
     app.add_exception_handler(ClimbingLogForbidden, climbing_log_forbidden_handler)
+
+    # Grade 도메인 (구현 5)
+    app.add_exception_handler(GymGradeSystemNotFound, gym_grade_system_not_found_handler)
 
     # Kakao OAuth (Day 12)
     app.add_exception_handler(OAuthStateInvalid, oauth_state_invalid_handler)
