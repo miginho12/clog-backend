@@ -1,12 +1,10 @@
 """Grade Service.
 
-종합점수 + 탑레이팅 산정 (ADR-041, ADR-042).
-- v_scale 트랙 (구현 2): parse_v_scale, compute_v_scale_grade
-- color 트랙 (구현 3): color_difficulty, compute_color_grade
-  기준짐 환산(구현 4 흡수): compute_color_grade(base_gym=...) 선택 인자.
+- 종합점수 + 탑레이팅 산정 (ADR-041, ADR-042): 구현 2~5
+- 짐 색체계 등록/조회/수정/삭제 (구현 6)
 
 순수 계산 함수는 모듈 레벨에 두어 DB 없이 단위 검증 가능.
-DB 조회가 필요한 집계는 GradeService 에 위치.
+DB 조회가 필요한 집계/CRUD 는 GradeService 에 위치.
 """
 
 import math
@@ -15,7 +13,13 @@ from collections import Counter
 from datetime import UTC, date, datetime
 from uuid import UUID
 
-from app.domain.grade.exceptions import GymGradeSystemNotFound
+from app.domain.grade.exceptions import (
+    GymGradeSystemAlreadyExists,
+    GymGradeSystemForbidden,
+    GymGradeSystemNotFound,
+    GymGradeSystemNotFoundById,
+)
+from app.domain.grade.models import GymGradeSystem
 from app.domain.grade.repository import GradeRepository
 from app.domain.grade.schemas import ColorGrade, VScaleGrade
 
@@ -41,7 +45,6 @@ def color_difficulty(ratio: float) -> float:
     """color 트랙 difficulty (ADR-041, 확정 (b)).
 
     ratio(0~1) × 10 + 1 → 1~11. v_scale 의 V0=1 보정과 대칭.
-    최하단 색(ratio=0)도 최소 기여 1 을 갖도록.
     """
     return ratio * 10 + 1
 
@@ -60,9 +63,6 @@ def compute_contribution(
       success_weight = 완등 1.0 / 실패 0.3
       time_weight    = 0.5 ^ (경과일/60)  (60일 반감기, 미래날짜는 0일 clamp)
       efficiency     = 1 / (1 + ln(attempts))  (attempts<=0 은 1 보정 -> 1.0)
-
-    difficulty 정의만 트랙별로 다름:
-      v_scale = V숫자 + 1,  color = ratio×10 + 1
     """
     success_weight = 1.0 if is_success else 0.3
     elapsed_days = max(0, (today - climbed_at).days)
@@ -73,17 +73,14 @@ def compute_contribution(
 
 
 class GradeService:
-    def __init__(self, repo: GradeRepository):
+    def __init__(self, repo: GradeRepository, session=None):
         self.repo = repo
+        # 쓰기 트랜잭션 커밋용 (get_session 은 자동 커밋 안 함). 산정은 읽기라 불필요.
+        self.session = session
+
+    # ── 산정 (구현 2~5) ──
 
     async def compute_v_scale_grade(self, user_id: UUID) -> VScaleGrade:
-        """본인 v_scale 기록으로 종합점수 + 탑레이팅 산정.
-
-        - 종합점수: 파싱된 기록 contribution 상위 TOP_N 단순 산술평균.
-          표본이 TOP_N 미만이면 실제 개수로 나눔.
-        - 탑레이팅: 완등(is_success) 기록 중 최고 V (상위 N 제한 없음).
-        - 파싱 가능한 기록이 0개면 (0.0, None, None, 0).
-        """
         logs = await self.repo.list_user_logs_for_grading(user_id, "v_scale")
         today = datetime.now(UTC).date()
 
@@ -92,7 +89,7 @@ class GradeService:
         for log in logs:
             v = parse_v_scale(log.grade_raw)
             if v is None:
-                continue  # 표준 V 표기 아님 -> 스킵
+                continue
             contributions.append(
                 compute_contribution(
                     difficulty=v + 1,
@@ -121,18 +118,6 @@ class GradeService:
     async def compute_color_grade(
         self, user_id: UUID, base_gym: str | None = None
     ) -> ColorGrade:
-        """본인 color 기록으로 종합점수 + 탑레이팅 산정 (ADR-041).
-
-        - 각 기록: 짐 color_order 에서 색 → rank → ratio → difficulty.
-          짐 미등록(시스템 없음) 또는 색 미매칭 기록은 스킵.
-        - 종합점수: contribution 상위 TOP_N 단순 산술평균 (기준짐 무관).
-        - base_gym (기준짐, 탑레이팅 색 투영 기준):
-            · 지정(None 아님): 그 짐으로 투영. DB 미등록이면 GymGradeSystemNotFound.
-            · None: 유효 기록 최다 짐 자동 선택 (동률 가나다순).
-        - 탑레이팅: 완등 중 최고 ratio → 기준짐 color_order 에 투영한 색.
-        - 유효 기록이 0개면 (0.0, resolved_base_gym, None, 0).
-        """
-        # base_gym 지정 시 먼저 검증 (잘못된 짐이면 점수 계산 전 실패)
         explicit_base_system = None
         if base_gym is not None:
             explicit_base_system = await self.repo.get_by_gym_name(base_gym)
@@ -152,10 +137,10 @@ class GradeService:
         for log in logs:
             system = systems.get(log.gym_name) if log.gym_name else None
             if system is None:
-                continue  # 짐 미등록 -> 스킵
+                continue
             rank = self.repo.color_to_rank(system, log.grade_raw)
             if rank is None:
-                continue  # 그 짐에 그 색 없음 -> 스킵
+                continue
             ratio = self.repo.rank_to_ratio(system, rank)
             contributions.append(
                 compute_contribution(
@@ -173,7 +158,6 @@ class GradeService:
         top = sorted(contributions, reverse=True)[:TOP_N]
         comprehensive_score = sum(top) / len(top) if top else 0.0
 
-        # 기준짐 결정: 지정값 우선, 없으면 최다기록 자동
         if base_gym is not None:
             resolved_base_gym: str | None = base_gym
             base_system = explicit_base_system
@@ -186,7 +170,6 @@ class GradeService:
                 )[0][0]
                 base_system = systems.get(resolved_base_gym)
 
-        # 탑레이팅 = 완등 중 최고 ratio → 기준짐 투영 색
         top_rating_label: str | None = None
         if success_ratios and base_system is not None:
             top_ratio = max(success_ratios)
@@ -198,3 +181,59 @@ class GradeService:
             top_rating_label=top_rating_label,
             counted_logs=len(top),
         )
+
+    # ── 짐 색체계 CRUD (구현 6) ──
+
+    async def list_gym_systems(self) -> list[GymGradeSystem]:
+        return await self.repo.list_all()
+
+    async def get_gym_system(self, system_id: UUID) -> GymGradeSystem:
+        system = await self.repo.get_by_id(system_id)
+        if system is None:
+            raise GymGradeSystemNotFoundById(str(system_id))
+        return system
+
+    async def create_gym_system(
+        self, *, gym_name: str, color_order: list[str], user_id: UUID
+    ) -> GymGradeSystem:
+        """짐 색체계 등록. 사용자 등록(is_official=False, created_by=user).
+
+        gym_name 중복이면 GymGradeSystemAlreadyExists(409).
+        """
+        existing = await self.repo.get_by_gym_name(gym_name)
+        if existing is not None:
+            raise GymGradeSystemAlreadyExists(gym_name)
+        system = await self.repo.create(
+            gym_name=gym_name,
+            color_order=color_order,
+            created_by=user_id,
+            is_official=False,
+        )
+        await self.session.commit()
+        await self.session.refresh(system)  # commit 후 expire 방지 (응답 직렬화용)
+        return system
+
+
+    async def update_gym_system(
+        self, *, system_id: UUID, color_order: list[str], user_id: UUID
+    ) -> GymGradeSystem:
+        """color_order 수정. 본인 등록분(비공식)만 (아니면 403)."""
+        system = await self.repo.get_by_id(system_id)
+        if system is None:
+            raise GymGradeSystemNotFoundById(str(system_id))
+        if system.is_official or system.created_by != user_id:
+            raise GymGradeSystemForbidden(str(system_id))
+        updated = await self.repo.update_color_order(system, color_order)
+        await self.session.commit()
+        await self.session.refresh(updated)  # commit 후 expire 방지 (응답 직렬화용)
+        return updated
+
+    async def delete_gym_system(self, *, system_id: UUID, user_id: UUID) -> None:
+        """삭제. 본인 등록분(비공식)만 (아니면 403)."""
+        system = await self.repo.get_by_id(system_id)
+        if system is None:
+            raise GymGradeSystemNotFoundById(str(system_id))
+        if system.is_official or system.created_by != user_id:
+            raise GymGradeSystemForbidden(str(system_id))
+        await self.repo.delete(system)
+        await self.session.commit()

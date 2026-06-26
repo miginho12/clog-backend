@@ -1,19 +1,25 @@
 """Grade 도메인 스키마.
 
-산정 결과 DTO. v_scale 트랙은 구현 2, color 트랙은 구현 3.
-GET /me/grade 응답은 두 트랙 중첩 (구현 5).
+- 산정 결과 DTO: VScaleGrade, ColorGrade, MeGradeResponse (구현 2~5)
+- 짐 색체계 등록/수정/응답: GymGradeSystem* (구현 6)
 """
 
-from pydantic import BaseModel
+from datetime import datetime
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
+# ─────────────────────────────────────────
+#  산정 결과 (구현 2~5)
+# ─────────────────────────────────────────
 class VScaleGrade(BaseModel):
     """v_scale 트랙 산정 결과 (ADR-042)."""
 
-    comprehensive_score: float  # 상위 N개 contribution 단순 산술평균
-    top_rating: int | None  # 완등 기록 중 최고 V 숫자 (없으면 None)
-    top_rating_label: str | None  # "V{n}" 표기 (없으면 None)
-    counted_logs: int  # 종합점수에 반영된 기록 수 (top N)
+    comprehensive_score: float
+    top_rating: int | None
+    top_rating_label: str | None
+    counted_logs: int
 
 
 class ColorGrade(BaseModel):
@@ -23,14 +29,87 @@ class ColorGrade(BaseModel):
     종합점수는 기준짐과 무관. base_gym 은 탑레이팅 색 라벨 투영에만 사용.
     """
 
-    comprehensive_score: float  # 상위 N개 contribution 단순 산술평균
-    base_gym: str | None  # 기준짐 (탑레이팅 색 투영 기준, 없으면 None)
-    top_rating_label: str | None  # 완등 최고 ratio → base_gym 투영 색
-    counted_logs: int  # 종합점수에 반영된 기록 수 (top N)
+    comprehensive_score: float
+    base_gym: str | None
+    top_rating_label: str | None
+    counted_logs: int
 
 
 class MeGradeResponse(BaseModel):
-    """GET /me/grade 응답 — v_scale + color 두 트랙 중첩 (구현 5)."""
+    """GET /me/grade 응답 — v_scale + color 두 트랙 중첩."""
 
     v_scale: VScaleGrade
     color: ColorGrade
+
+
+# ─────────────────────────────────────────
+#  짐 색체계 등록/수정/응답 (구현 6)
+# ─────────────────────────────────────────
+def _validate_color_order(v: list[str]) -> list[str]:
+    """색 배열 검증: 각 색 strip, 빈 문자열/중복 불가, 최소 2단계."""
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for color in v:
+        c = color.strip()
+        if not c:
+            raise ValueError("빈 색 이름은 허용되지 않습니다")
+        if len(c) > 20:
+            raise ValueError(f"색 이름은 20자 이하: {c}")
+        if c in seen:
+            raise ValueError(f"중복된 색: {c}")
+        seen.add(c)
+        cleaned.append(c)
+    if len(cleaned) < 2:
+        raise ValueError("color_order 는 최소 2단계 이상이어야 합니다")
+    return cleaned
+
+
+class GymGradeSystemCreate(BaseModel):
+    """짐 색체계 등록 요청. color_order 는 쉬운→어려운 순."""
+
+    gym_name: str = Field(..., min_length=1, max_length=100, examples=["클라이밍파크 신촌"])
+    color_order: list[str] = Field(
+        ...,
+        examples=[["흰", "노", "주", "초", "파", "빨", "보", "검"]],
+        description="쉬운→어려운 순 색 이름 배열 (인덱스 = rank)",
+    )
+
+    @field_validator("gym_name")
+    @classmethod
+    def _strip_gym_name(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("gym_name 은 비어 있을 수 없습니다")
+        return v
+
+    @field_validator("color_order")
+    @classmethod
+    def _validate_colors(cls, v: list[str]) -> list[str]:
+        return _validate_color_order(v)
+
+
+class GymGradeSystemUpdate(BaseModel):
+    """짐 색체계 수정 요청. color_order 만 수정 가능 (gym_name 불변)."""
+
+    color_order: list[str] = Field(
+        ..., examples=[["흰", "노", "주", "초", "파", "빨", "보", "회", "검"]]
+    )
+
+    @field_validator("color_order")
+    @classmethod
+    def _validate_colors(cls, v: list[str]) -> list[str]:
+        return _validate_color_order(v)
+
+
+class GymGradeSystemResponse(BaseModel):
+    """짐 색체계 응답."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    gym_name: str
+    color_order: list[str]
+    is_official: bool
+    created_by: UUID | None
+    created_at: datetime
+    updated_at: datetime

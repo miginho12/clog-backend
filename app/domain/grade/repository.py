@@ -1,6 +1,6 @@
 """Grade Repository.
 
-짐 색 순서 조회 + 색 ↔ rank ↔ ratio 변환 (구현 1, 3).
+짐 색 순서 CRUD + 조회 (구현 1, 6) + 색 ↔ rank ↔ ratio 변환 (구현 1, 3).
 점수 계산용 기록 조회 (구현 2~): list_user_logs_for_grading.
 점수 계산 로직 자체는 service 에 위치.
 """
@@ -24,6 +24,12 @@ class GradeRepository:
     async def get_by_gym_name(self, gym_name: str) -> GymGradeSystem | None:
         result = await self.session.execute(
             select(GymGradeSystem).where(GymGradeSystem.gym_name == gym_name)
+        )
+        return result.scalar_one_or_none()
+
+    async def get_by_id(self, system_id: UUID) -> GymGradeSystem | None:
+        result = await self.session.execute(
+            select(GymGradeSystem).where(GymGradeSystem.id == system_id)
         )
         return result.scalar_one_or_none()
 
@@ -56,6 +62,39 @@ class GradeRepository:
             .order_by(GymGradeSystem.gym_name)
         )
         return list(result.scalars().all())
+
+    # ── 짐 색 순서 등록/수정/삭제 (구현 6) ──
+
+    async def create(
+        self,
+        *,
+        gym_name: str,
+        color_order: list[str],
+        created_by: UUID | None,
+        is_official: bool = False,
+    ) -> GymGradeSystem:
+        system = GymGradeSystem(
+            gym_name=gym_name,
+            color_order=color_order,
+            is_official=is_official,
+            created_by=created_by,
+        )
+        self.session.add(system)
+        await self.session.flush()
+        return system
+
+    async def update_color_order(
+        self, system: GymGradeSystem, color_order: list[str]
+    ) -> GymGradeSystem:
+        """color_order 만 갱신. gym_name 은 불변(기록 매칭 키)."""
+        system.color_order = color_order
+        await self.session.flush()
+        return system
+
+    async def delete(self, system: GymGradeSystem) -> None:
+        """hard delete (GymGradeSystem 은 soft-delete 미지원 모델)."""
+        await self.session.delete(system)
+        await self.session.flush()
 
     # ── 점수 계산용 본인 기록 조회 (구현 2~) ──
 

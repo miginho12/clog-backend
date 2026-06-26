@@ -24,7 +24,10 @@ from app.domain.climbing.exceptions import (
     ClimbingLogNotFound,
 )
 from app.domain.grade.exceptions import (
+    GymGradeSystemAlreadyExists,
+    GymGradeSystemForbidden,
     GymGradeSystemNotFound,
+    GymGradeSystemNotFoundById,
 )
 from app.domain.users.exceptions import (
     EmailAlreadyExists,
@@ -295,6 +298,39 @@ async def gym_grade_system_not_found_handler(
     )
 
 
+async def gym_grade_system_already_exists_handler(
+    request: Request, exc: GymGradeSystemAlreadyExists
+) -> JSONResponse:
+    return _error_response(
+        status_code=status.HTTP_409_CONFLICT,
+        code="gym_grade_system_already_exists",
+        message="이미 등록된 암장입니다",
+        gym_name=exc.gym_name,
+    )
+
+
+async def gym_grade_system_not_found_by_id_handler(
+    request: Request, exc: GymGradeSystemNotFoundById
+) -> JSONResponse:
+    return _error_response(
+        status_code=status.HTTP_404_NOT_FOUND,
+        code="gym_grade_system_not_found",
+        message="색체계를 찾을 수 없습니다",
+        system_id=exc.system_id,
+    )
+
+
+async def gym_grade_system_forbidden_handler(
+    request: Request, exc: GymGradeSystemForbidden
+) -> JSONResponse:
+    return _error_response(
+        status_code=status.HTTP_403_FORBIDDEN,
+        code="gym_grade_system_forbidden",
+        message="본인이 등록한 색체계만 수정/삭제할 수 있습니다",
+        system_id=exc.system_id,
+    )
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     # User 도메인
     app.add_exception_handler(EmailAlreadyExists, email_already_exists_handler)
@@ -319,6 +355,9 @@ def register_exception_handlers(app: FastAPI) -> None:
 
     # Grade 도메인 (구현 5)
     app.add_exception_handler(GymGradeSystemNotFound, gym_grade_system_not_found_handler)
+    app.add_exception_handler(GymGradeSystemAlreadyExists, gym_grade_system_already_exists_handler)
+    app.add_exception_handler(GymGradeSystemNotFoundById, gym_grade_system_not_found_by_id_handler)
+    app.add_exception_handler(GymGradeSystemForbidden, gym_grade_system_forbidden_handler)
 
     # Kakao OAuth (Day 12)
     app.add_exception_handler(OAuthStateInvalid, oauth_state_invalid_handler)
