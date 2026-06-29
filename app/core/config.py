@@ -122,6 +122,21 @@ class Settings(BaseSettings):
     kakao_token_url: str = "https://kauth.kakao.com/oauth/token"
     kakao_user_info_url: str = "https://kapi.kakao.com/v2/user/me"
 
+    # ── MinIO (오브젝트 스토리지 / 미디어 업로드) ──
+    # 내부: 백엔드가 presigned 발급/관리에 쓰는 클러스터 내부 엔드포인트
+    minio_endpoint: str = Field(default="minio.dev.svc.cluster.local:9000")
+    # 외부: presigned URL 호스트 (브라우저가 닿는 주소). 비면 endpoint 로 폴백
+    minio_public_endpoint: str = Field(default="")
+    minio_access_key: str = Field(default="")
+    minio_secret_key: str = Field(default="")
+    minio_bucket: str = Field(default="clog-media")
+    # 내부 통신은 http (TLS 종단은 외부 노출 계층에서)
+    minio_secure: bool = Field(default=False)
+    # presigned 유효시간(초) + 업로드 제한
+    minio_presign_expiry: int = Field(default=300)  # 5분
+    media_max_image_bytes: int = Field(default=10 * 1024 * 1024)   # 10MB
+    media_max_video_bytes: int = Field(default=100 * 1024 * 1024)  # 100MB (1분 영상 여유)
+
     oauth_state_ttl_seconds: int = Field(default=300)
 
     # ── 메타 ──

@@ -29,6 +29,7 @@ from app.domain.grade.exceptions import (
     GymGradeSystemNotFound,
     GymGradeSystemNotFoundById,
 )
+from app.domain.media.service import MediaError
 from app.domain.users.exceptions import (
     EmailAlreadyExists,
     NicknameAlreadyExists,
@@ -331,6 +332,10 @@ async def gym_grade_system_forbidden_handler(
     )
 
 
+async def media_error_handler(request: Request, exc: MediaError) -> JSONResponse:
+    return _error_response(400, exc.code, exc.message, **exc.details)
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     # User 도메인
     app.add_exception_handler(EmailAlreadyExists, email_already_exists_handler)
@@ -352,6 +357,7 @@ def register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(LocalLoginNotAvailable, local_login_not_available_handler)
     app.add_exception_handler(ClimbingLogNotFound, climbing_log_not_found_handler)
     app.add_exception_handler(ClimbingLogForbidden, climbing_log_forbidden_handler)
+    app.add_exception_handler(MediaError, media_error_handler)
 
     # Grade 도메인 (구현 5)
     app.add_exception_handler(GymGradeSystemNotFound, gym_grade_system_not_found_handler)

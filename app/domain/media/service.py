@@ -1,0 +1,78 @@
+"""미디어 업로드 — MinIO presigned URL 발급."""
+
+import uuid
+from datetime import timedelta
+
+from minio import Minio
+
+from app.core.config import Settings
+
+# 허용 content_type → 확장자 + 카테고리(image/video)
+ALLOWED_CONTENT_TYPES: dict[str, tuple[str, str]] = {
+    "image/jpeg": ("jpg", "image"),
+    "image/png": ("png", "image"),
+    "image/webp": ("webp", "image"),
+    "image/gif": ("gif", "image"),
+    "video/mp4": ("mp4", "video"),
+    "video/quicktime": ("mov", "video"),
+    "video/webm": ("webm", "video"),
+}
+
+
+class MediaError(Exception):
+    """미디어 업로드 도메인 예외 (400 매핑)."""
+
+    def __init__(self, code: str, message: str, details: dict | None = None):
+        self.code = code
+        self.message = message
+        self.details = details or {}
+        super().__init__(message)
+
+
+class MediaService:
+    def __init__(self, settings: Settings):
+        self.settings = settings
+        # presigned URL 호스트: 외부 엔드포인트가 있으면 그걸로 서명 (브라우저가 닿는 주소)
+        endpoint = settings.minio_public_endpoint or settings.minio_endpoint
+        self._client = Minio(
+            endpoint,
+            access_key=settings.minio_access_key,
+            secret_key=settings.minio_secret_key,
+            secure=settings.minio_secure,
+        )
+        self._bucket = settings.minio_bucket
+
+    def create_presigned_upload(
+        self, *, user_id: str, content_type: str
+    ) -> dict:
+        """업로드용 presigned PUT URL 발급.
+
+        반환: {upload_url, object_key, public_url, category}
+        """
+        if content_type not in ALLOWED_CONTENT_TYPES:
+            raise MediaError(
+                "unsupported_media_type",
+                "지원하지 않는 파일 형식입니다",
+                {"content_type": content_type},
+            )
+        ext, category = ALLOWED_CONTENT_TYPES[content_type]
+        # object key: {user_id}/{uuid}.{ext} — 충돌 방지 + 사용자별 격리
+        object_key = f"{user_id}/{uuid.uuid4().hex}.{ext}"
+
+        upload_url = self._client.presigned_put_object(
+            self._bucket,
+            object_key,
+            expires=timedelta(seconds=self.settings.minio_presign_expiry),
+        )
+
+        # 공개 조회 URL (버킷 public-read 전제) — 외부 엔드포인트 기준
+        host = self.settings.minio_public_endpoint or self.settings.minio_endpoint
+        scheme = "https" if self.settings.minio_secure else "http"
+        public_url = f"{scheme}://{host}/{self._bucket}/{object_key}"
+
+        return {
+            "upload_url": upload_url,
+            "object_key": object_key,
+            "public_url": public_url,
+            "category": category,
+        }
