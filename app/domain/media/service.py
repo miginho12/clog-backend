@@ -39,6 +39,9 @@ class MediaService:
             access_key=settings.minio_access_key,
             secret_key=settings.minio_secret_key,
             secure=settings.minio_secure,
+            # region 명시: presigned 발급 시 _get_region 네트워크 조회 방지
+            # (외부 endpoint 로 region 조회 시 self-signed TLS 로 실패)
+            region="us-east-1",
         )
         self._bucket = settings.minio_bucket
 
