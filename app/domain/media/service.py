@@ -1,6 +1,7 @@
 """미디어 업로드 — MinIO presigned URL 발급."""
 
 import uuid
+from collections.abc import Iterator
 from datetime import timedelta
 
 from minio import Minio
@@ -79,3 +80,28 @@ class MediaService:
             "public_url": public_url,
             "category": category,
         }
+
+    def list_object_keys(self) -> Iterator[str]:
+        """버킷의 모든 object_key 나열 (orphan 청소용)."""
+        objects = self._client.list_objects(self._bucket, recursive=True)
+        for obj in objects:
+            if obj.object_name:
+                yield obj.object_name
+
+    def delete_object(self, object_key: str) -> None:
+        """단일 객체 삭제 (멱등 — 없는 키여도 에러 안 냄)."""
+        self._client.remove_object(self._bucket, object_key)
+
+    def extract_object_key(self, media_url: str) -> str | None:
+        """media_url 에서 object_key 추출.
+
+        예: https://host/clog-media/{user}/{uuid}.png -> {user}/{uuid}.png
+        버킷 경로(/clog-media/) 뒤 부분만 반환. 형식 안 맞으면 None.
+        """
+        marker = f"/{self._bucket}/"
+        idx = media_url.find(marker)
+        if idx == -1:
+            return None
+        key = media_url[idx + len(marker):]
+        # 쿼리스트링(?X-Amz-...) 있으면 제거
+        return key.split("?", 1)[0] or None
