@@ -30,9 +30,10 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, UUID
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.infra.db.base import Base
+from app.domain.users.models import User
 
 
 class ClimbingLog(Base):
@@ -55,6 +56,9 @@ class ClimbingLog(Base):
         index=True,
         comment="작성자 user id",
     )
+
+    # 작성자 relationship (피드 author 표시용 — selectinload 로 eager load)
+    user: Mapped[User] = relationship(lazy="raise")
 
     # ── 그레이드 (ADR-022: 짐별 명시) ──
     grade_raw: Mapped[str] = mapped_column(

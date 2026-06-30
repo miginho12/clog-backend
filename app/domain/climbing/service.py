@@ -77,9 +77,10 @@ class ClimbingService:
         if log.user_id != user_id:
             raise ClimbingLogForbidden(str(log_id))
 
-        # None 이 아닌 필드만 업데이트 (부분 수정)
-        updates = {k: v for k, v in data.items() if v is not None}
-        log = await self.repo.update(log, **updates)
+        # 라우터에서 exclude_unset=True 로 dump 하므로 data 에는
+        # "프론트가 명시적으로 보낸 필드"만 존재. null 도 의도된 값
+        # (예: 미디어 제거) 이므로 None 필터링하지 않고 그대로 반영.
+        log = await self.repo.update(log, **data)
         await self.session.commit()
         await self.session.refresh(log)
         logger.info("climbing_log_updated", log_id=str(log_id))

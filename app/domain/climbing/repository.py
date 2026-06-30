@@ -9,6 +9,7 @@ from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.domain.climbing.models import ClimbingLog
 
@@ -21,7 +22,9 @@ class ClimbingRepository:
 
     async def get_by_id(self, log_id: UUID) -> ClimbingLog | None:
         result = await self.session.execute(
-            select(ClimbingLog).where(
+            select(ClimbingLog)
+            .options(selectinload(ClimbingLog.user))
+            .where(
                 ClimbingLog.id == log_id,
                 ClimbingLog.deleted_at.is_(None),
             )
@@ -80,7 +83,9 @@ class ClimbingRepository:
 
         반환: (items, has_next)
         """
-        stmt = select(ClimbingLog).where(ClimbingLog.deleted_at.is_(None))
+        stmt = select(ClimbingLog).options(selectinload(ClimbingLog.user)).where(
+            ClimbingLog.deleted_at.is_(None)
+        )
 
         # 공개 범위
         if viewer_id is None:

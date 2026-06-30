@@ -4,7 +4,7 @@ from datetime import date, datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 # ─────────────────────────────────────────
 #  상수 — 추천 카테고리 태그 (자유 입력도 허용)
@@ -144,6 +144,23 @@ class ClimbingLogResponse(ClimbingLogBase):
     visibility: str
     created_at: datetime
     updated_at: datetime
+    author: ClimbingLogAuthor | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _map_user_to_author(cls, data):
+        # ORM 객체의 user(relationship) → author 로 매핑.
+        # selectinload 로 eager load 된 경우에만 채워짐.
+        if isinstance(data, dict):
+            return data
+        user = getattr(data, "user", None)
+        if user is not None and getattr(data, "author", None) is None:
+            # 동적으로 author 속성 부여 (from_attributes 가 읽도록)
+            try:
+                data.author = ClimbingLogAuthor.model_validate(user)
+            except Exception:
+                pass
+        return data
 
 
 class ClimbingLogListResponse(BaseModel):
