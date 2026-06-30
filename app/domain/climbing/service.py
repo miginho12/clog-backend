@@ -32,7 +32,8 @@ class ClimbingService:
     async def create_log(self, *, user_id: UUID, data: dict) -> ClimbingLog:
         log = await self.repo.create(user_id=user_id, **data)
         await self.session.commit()
-        await self.session.refresh(log)
+        # author 응답 매핑을 위해 user 관계까지 eager load (lazy=raise 대응)
+        await self.session.refresh(log, ["user"])
         logger.info(
             "climbing_log_created", log_id=str(log.id), user_id=str(user_id)
         )
@@ -82,7 +83,7 @@ class ClimbingService:
         # (예: 미디어 제거) 이므로 None 필터링하지 않고 그대로 반영.
         log = await self.repo.update(log, **data)
         await self.session.commit()
-        await self.session.refresh(log)
+        await self.session.refresh(log, ["user"])
         logger.info("climbing_log_updated", log_id=str(log_id))
         return log
 
