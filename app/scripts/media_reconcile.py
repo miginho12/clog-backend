@@ -10,6 +10,7 @@
 
 import argparse
 import asyncio
+import os
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
@@ -24,7 +25,8 @@ from app.infra.db import get_sessionmaker
 logger = get_logger(__name__)
 
 # soft delete 후 미디어 보존 유예 (일)
-RETENTION_DAYS = 2
+# 환경변수 MEDIA_RECONCILE_RETENTION_DAYS 로 오버라이드 가능 (기본 2)
+RETENTION_DAYS = int(os.getenv("MEDIA_RECONCILE_RETENTION_DAYS", "2"))
 
 
 async def collect_referenced_keys(media: MediaService) -> set[str]:
