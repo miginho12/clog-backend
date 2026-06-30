@@ -31,15 +31,22 @@ class MediaError(Exception):
 
 
 class MediaService:
-    def __init__(self, settings: Settings):
+    def __init__(self, settings: Settings, *, internal: bool = False):
         self.settings = settings
-        # presigned URL 호스트: 외부 엔드포인트가 있으면 그걸로 서명 (브라우저가 닿는 주소)
-        endpoint = settings.minio_public_endpoint or settings.minio_endpoint
+        # presigned 발급은 외부 엔드포인트(브라우저가 닿는 주소)로 서명.
+        # 단 internal=True (클러스터 내부 작업: 객체 나열/삭제)면 내부 주소 + http.
+        # 내부 작업이 외부 주소로 가면 self-signed TLS 로 막히기 때문.
+        if internal:
+            endpoint = settings.minio_endpoint
+            secure = False
+        else:
+            endpoint = settings.minio_public_endpoint or settings.minio_endpoint
+            secure = settings.minio_secure
         self._client = Minio(
             endpoint,
             access_key=settings.minio_access_key,
             secret_key=settings.minio_secret_key,
-            secure=settings.minio_secure,
+            secure=secure,
             # region 명시: presigned 발급 시 _get_region 네트워크 조회 방지
             # (외부 endpoint 로 region 조회 시 self-signed TLS 로 실패)
             region="us-east-1",

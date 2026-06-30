@@ -52,7 +52,7 @@ async def collect_referenced_keys(media: MediaService) -> set[str]:
 async def main(apply: bool) -> None:
     init_engine()
     settings = get_settings()
-    media = MediaService(settings)
+    media = MediaService(settings, internal=True)
 
     referenced = await collect_referenced_keys(media)
     all_keys = list(media.list_object_keys())
