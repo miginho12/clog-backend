@@ -24,6 +24,12 @@ from app.domain.climbing.exceptions import (
     ClimbingLogNotFound,
 )
 from app.domain.likes.exceptions import LikeTargetNotFound
+from app.domain.comments.exceptions import (
+    CommentForbidden,
+    CommentNotFound,
+    CommentParentInvalid,
+    CommentTargetNotFound,
+)
 from app.domain.grade.exceptions import (
     GymGradeSystemAlreadyExists,
     GymGradeSystemForbidden,
@@ -343,6 +349,22 @@ async def like_target_not_found_handler(
     return _error_response(404, "LIKE_TARGET_NOT_FOUND", "좋아요 대상 게시물을 찾을 수 없습니다")
 
 
+async def comment_target_not_found_handler(request: Request, exc: CommentTargetNotFound) -> JSONResponse:
+    return _error_response(404, "COMMENT_TARGET_NOT_FOUND", "댓글 대상 게시물을 찾을 수 없습니다")
+
+
+async def comment_not_found_handler(request: Request, exc: CommentNotFound) -> JSONResponse:
+    return _error_response(404, "COMMENT_NOT_FOUND", "댓글을 찾을 수 없습니다")
+
+
+async def comment_forbidden_handler(request: Request, exc: CommentForbidden) -> JSONResponse:
+    return _error_response(403, "COMMENT_FORBIDDEN", "본인의 댓글만 수정/삭제할 수 있습니다")
+
+
+async def comment_parent_invalid_handler(request: Request, exc: CommentParentInvalid) -> JSONResponse:
+    return _error_response(400, "COMMENT_PARENT_INVALID", "유효하지 않은 부모 댓글입니다")
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     # User 도메인
     app.add_exception_handler(EmailAlreadyExists, email_already_exists_handler)
@@ -365,6 +387,10 @@ def register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(ClimbingLogNotFound, climbing_log_not_found_handler)
     app.add_exception_handler(ClimbingLogForbidden, climbing_log_forbidden_handler)
     app.add_exception_handler(LikeTargetNotFound, like_target_not_found_handler)
+    app.add_exception_handler(CommentTargetNotFound, comment_target_not_found_handler)
+    app.add_exception_handler(CommentNotFound, comment_not_found_handler)
+    app.add_exception_handler(CommentForbidden, comment_forbidden_handler)
+    app.add_exception_handler(CommentParentInvalid, comment_parent_invalid_handler)
     app.add_exception_handler(MediaError, media_error_handler)
 
     # Grade 도메인 (구현 5)

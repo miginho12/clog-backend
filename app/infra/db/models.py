@@ -15,6 +15,7 @@ from app.domain.users.models import User  # noqa: F401
 from app.domain.climbing.models import ClimbingLog  # noqa: F401
 from app.domain.grade.models import GymGradeSystem  # noqa: F401
 from app.domain.likes.models import Like  # noqa: F401
+from app.domain.comments.models import Comment  # noqa: F401
 
 # 다음 세션에 추가될 모델들:
 # from app.domain.gyms.models import Gym  # noqa: F401
@@ -27,4 +28,5 @@ __all__ = [
     "ClimbingLog",
     "GymGradeSystem",
     "Like",
+    "Comment",
 ]
