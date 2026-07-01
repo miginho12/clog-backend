@@ -23,6 +23,7 @@ from app.domain.climbing.exceptions import (
     ClimbingLogForbidden,
     ClimbingLogNotFound,
 )
+from app.domain.likes.exceptions import LikeTargetNotFound
 from app.domain.grade.exceptions import (
     GymGradeSystemAlreadyExists,
     GymGradeSystemForbidden,
@@ -336,6 +337,12 @@ async def media_error_handler(request: Request, exc: MediaError) -> JSONResponse
     return _error_response(400, exc.code, exc.message, **exc.details)
 
 
+async def like_target_not_found_handler(
+    request: Request, exc: LikeTargetNotFound
+) -> JSONResponse:
+    return _error_response(404, "LIKE_TARGET_NOT_FOUND", "좋아요 대상 게시물을 찾을 수 없습니다")
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     # User 도메인
     app.add_exception_handler(EmailAlreadyExists, email_already_exists_handler)
@@ -357,6 +364,7 @@ def register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(LocalLoginNotAvailable, local_login_not_available_handler)
     app.add_exception_handler(ClimbingLogNotFound, climbing_log_not_found_handler)
     app.add_exception_handler(ClimbingLogForbidden, climbing_log_forbidden_handler)
+    app.add_exception_handler(LikeTargetNotFound, like_target_not_found_handler)
     app.add_exception_handler(MediaError, media_error_handler)
 
     # Grade 도메인 (구현 5)
