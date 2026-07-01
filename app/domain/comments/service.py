@@ -14,6 +14,7 @@ from app.domain.comments.exceptions import (
 )
 from app.domain.comments.models import Comment
 from app.domain.comments.repository import CommentRepository
+from app.domain.comment_likes.repository import CommentLikeRepository
 
 logger = get_logger(__name__)
 
@@ -24,10 +25,12 @@ class CommentService:
         session: AsyncSession,
         repository: CommentRepository,
         climbing_repo: ClimbingRepository,
+        like_repo: CommentLikeRepository,
     ):
         self.session = session
         self.repo = repository
         self.climbing_repo = climbing_repo
+        self.like_repo = like_repo
 
     async def _get_visible_log(self, *, log_id: UUID, viewer_id: UUID | None):
         """대상 게시물이 존재하고 볼 수 있는지 검증 후 반환."""
@@ -45,14 +48,20 @@ class CommentService:
         viewer_id: UUID | None,
         log_owner_id: UUID,
         reply_counts: dict[UUID, int] | None = None,
+        like_counts: dict[UUID, int] | None = None,
+        liked_ids: set[UUID] | None = None,
     ) -> None:
-        """is_mine / can_pin / reply_count 동적 주입."""
+        """is_mine / can_pin / reply_count / like_count / liked_by_me 동적 주입."""
         rc = reply_counts or {}
+        lc = like_counts or {}
+        liked = liked_ids or set()
         for c in comments:
             c.is_mine = viewer_id is not None and c.user_id == viewer_id
             # 고정 권한 = 게시물 작성자 (댓글 작성자 아님)
             c.can_pin = viewer_id is not None and viewer_id == log_owner_id
             c.reply_count = rc.get(c.id, 0)
+            c.like_count = lc.get(c.id, 0)
+            c.liked_by_me = c.id in liked
 
     async def list_comments(
         self, *, log_id: UUID, viewer_id: UUID | None
@@ -68,6 +77,17 @@ class CommentService:
         tops = [c for c in all_comments if c.parent_id is None]
         replies = [c for c in all_comments if c.parent_id is not None]
 
+        # 좋아요 배치 집계 (N+1 방지)
+        all_ids = [c.id for c in all_comments]
+        like_counts = await self.like_repo.count_by_comments(all_ids)
+        liked_ids = (
+            await self.like_repo.liked_comment_ids(
+                user_id=viewer_id, comment_ids=all_ids
+            )
+            if viewer_id is not None
+            else set()
+        )
+
         # 대댓글 수 집계 (parent_id 기준)
         reply_counts: dict[UUID, int] = {}
         for r in replies:
@@ -80,9 +100,15 @@ class CommentService:
             viewer_id=viewer_id,
             log_owner_id=log.user_id,
             reply_counts=reply_counts,
+            like_counts=like_counts,
+            liked_ids=liked_ids,
         )
         self._attach_meta(
-            replies, viewer_id=viewer_id, log_owner_id=log.user_id
+            replies,
+            viewer_id=viewer_id,
+            log_owner_id=log.user_id,
+            like_counts=like_counts,
+            liked_ids=liked_ids,
         )
 
         total = len(all_comments)
@@ -118,6 +144,8 @@ class CommentService:
         comment.is_mine = True
         comment.can_pin = user_id == log.user_id
         comment.reply_count = 0
+        comment.like_count = 0
+        comment.liked_by_me = False
         logger.info(
             "comment_created",
             comment_id=str(comment.id),
@@ -137,6 +165,10 @@ class CommentService:
         await self.session.commit()
         await self.session.refresh(comment, ["user"])
         comment.is_mine = True
+        comment.like_count = await self.like_repo.count(comment_id=comment.id)
+        comment.liked_by_me = await self.like_repo.exists(
+            user_id=user_id, comment_id=comment.id
+        )
         logger.info("comment_updated", comment_id=str(comment_id))
         return comment
 

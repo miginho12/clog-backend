@@ -34,7 +34,8 @@ class CommentResponse(BaseModel):
     reply_count: int = 0
     is_mine: bool = False
     can_pin: bool = False
-    # 좋아요는 Phase 3b 에서 추가 (like_count/liked_by_me)
+    like_count: int = 0
+    liked_by_me: bool = False
 
     @model_validator(mode="before")
     @classmethod

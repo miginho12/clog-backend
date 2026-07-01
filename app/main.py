@@ -10,7 +10,7 @@ from slowapi.middleware import SlowAPIMiddleware
 from starlette_prometheus import metrics, PrometheusMiddleware
 
 from app.api.exception_handlers import register_exception_handlers
-from app.api.routes import auth, climbing, comments, grade, gym_grade_systems, health, likes, media, users
+from app.api.routes import auth, climbing, comment_likes, comments, grade, gym_grade_systems, health, likes, media, users
 from app.core.config import get_settings
 from app.core.logging import setup_logging, get_logger
 from app.core.rate_limit import limiter
@@ -97,6 +97,7 @@ def create_app() -> FastAPI:
     app.include_router(media.router)
     app.include_router(likes.router)
     app.include_router(comments.router)
+    app.include_router(comment_likes.router)
 
     # ── 루트 ──
     @app.get("/", tags=["root"])

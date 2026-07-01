@@ -24,6 +24,7 @@ from app.domain.climbing.exceptions import (
     ClimbingLogNotFound,
 )
 from app.domain.likes.exceptions import LikeTargetNotFound
+from app.domain.comment_likes.exceptions import CommentLikeTargetNotFound
 from app.domain.comments.exceptions import (
     CommentForbidden,
     CommentNotFound,
@@ -365,6 +366,10 @@ async def comment_parent_invalid_handler(request: Request, exc: CommentParentInv
     return _error_response(400, "COMMENT_PARENT_INVALID", "유효하지 않은 부모 댓글입니다")
 
 
+async def comment_like_target_not_found_handler(request: Request, exc: CommentLikeTargetNotFound) -> JSONResponse:
+    return _error_response(404, "COMMENT_LIKE_TARGET_NOT_FOUND", "좋아요 대상 댓글을 찾을 수 없습니다")
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     # User 도메인
     app.add_exception_handler(EmailAlreadyExists, email_already_exists_handler)
@@ -391,6 +396,7 @@ def register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(CommentNotFound, comment_not_found_handler)
     app.add_exception_handler(CommentForbidden, comment_forbidden_handler)
     app.add_exception_handler(CommentParentInvalid, comment_parent_invalid_handler)
+    app.add_exception_handler(CommentLikeTargetNotFound, comment_like_target_not_found_handler)
     app.add_exception_handler(MediaError, media_error_handler)
 
     # Grade 도메인 (구현 5)
