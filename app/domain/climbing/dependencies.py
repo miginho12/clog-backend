@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.climbing.repository import ClimbingRepository
 from app.domain.climbing.service import ClimbingService
+from app.domain.likes.repository import LikeRepository
 from app.infra.db import get_session
 
 
@@ -20,7 +21,11 @@ def get_climbing_service(
     session: Annotated[AsyncSession, Depends(get_session)],
     repository: Annotated[ClimbingRepository, Depends(get_climbing_repository)],
 ) -> ClimbingService:
-    return ClimbingService(session=session, repository=repository)
+    return ClimbingService(
+        session=session,
+        repository=repository,
+        like_repo=LikeRepository(session),
+    )
 
 
 ClimbingServiceDep = Annotated[ClimbingService, Depends(get_climbing_service)]

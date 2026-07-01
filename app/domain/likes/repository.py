@@ -44,3 +44,33 @@ class LikeRepository:
             .where(Like.climbing_log_id == log_id)
         )
         return int(result.scalar_one())
+
+    async def count_by_logs(
+        self, log_ids: list[UUID]
+    ) -> dict[UUID, int]:
+        """여러 게시물의 좋아요 수를 한 번에 집계 (N+1 방지).
+
+        반환: {log_id: count}. 좋아요 0 인 게시물은 dict 에 없음(호출측에서 0 처리).
+        """
+        if not log_ids:
+            return {}
+        result = await self.session.execute(
+            select(Like.climbing_log_id, func.count())
+            .where(Like.climbing_log_id.in_(log_ids))
+            .group_by(Like.climbing_log_id)
+        )
+        return {row[0]: int(row[1]) for row in result.all()}
+
+    async def liked_log_ids(
+        self, *, user_id: UUID, log_ids: list[UUID]
+    ) -> set[UUID]:
+        """viewer 가 좋아요한 게시물 id 집합 (여러 게시물 한 번에)."""
+        if not log_ids:
+            return set()
+        result = await self.session.execute(
+            select(Like.climbing_log_id).where(
+                Like.user_id == user_id,
+                Like.climbing_log_id.in_(log_ids),
+            )
+        )
+        return {row[0] for row in result.all()}

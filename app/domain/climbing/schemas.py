@@ -145,17 +145,19 @@ class ClimbingLogResponse(ClimbingLogBase):
     created_at: datetime
     updated_at: datetime
     author: ClimbingLogAuthor | None = None
+    like_count: int = 0
+    liked_by_me: bool = False
 
     @model_validator(mode="before")
     @classmethod
-    def _map_user_to_author(cls, data):
-        # ORM 객체의 user(relationship) → author 로 매핑.
-        # selectinload 로 eager load 된 경우에만 채워짐.
+    def _map_orm_extras(cls, data):
+        # ORM 객체의 user(relationship) → author 매핑 +
+        # service 가 동적 주입한 like_count/liked_by_me 를 읽음.
+        # selectinload / 집계 주입이 된 경우에만 채워짐.
         if isinstance(data, dict):
             return data
         user = getattr(data, "user", None)
         if user is not None and getattr(data, "author", None) is None:
-            # 동적으로 author 속성 부여 (from_attributes 가 읽도록)
             try:
                 data.author = ClimbingLogAuthor.model_validate(user)
             except Exception:
