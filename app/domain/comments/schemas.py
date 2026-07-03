@@ -22,6 +22,10 @@ class CommentUpdate(BaseModel):
     content: str = Field(..., min_length=1, max_length=2000)
 
 
+class CommentPinRequest(BaseModel):
+    pinned: bool
+
+
 class CommentResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

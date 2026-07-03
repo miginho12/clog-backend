@@ -66,6 +66,11 @@ class CommentRepository:
         await self.session.flush()
         return comment
 
+    async def set_pinned(self, comment: Comment, pinned: bool) -> Comment:
+        comment.is_pinned = pinned
+        await self.session.flush()
+        return comment
+
     async def soft_delete(self, comment: Comment) -> None:
         comment.deleted_at = func.now()
         await self.session.flush()

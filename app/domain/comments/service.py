@@ -183,3 +183,37 @@ class CommentService:
         await self.repo.soft_delete(comment)
         await self.session.commit()
         logger.info("comment_deleted", comment_id=str(comment_id))
+
+    async def set_pin(
+        self, *, comment_id: UUID, user_id: UUID, pinned: bool
+    ) -> Comment:
+        """댓글 고정/해제. 게시물 작성자만 가능 (여러 개 가능).
+
+        댓글 작성자가 아니라 '게시물 소유자' 권한임에 주의.
+        """
+        comment = await self.repo.get_by_id(comment_id)
+        if comment is None:
+            raise CommentNotFound(str(comment_id))
+        log = await self.climbing_repo.get_by_id(comment.climbing_log_id)
+        if log is None:
+            raise CommentNotFound(str(comment_id))
+        if log.user_id != user_id:
+            # 게시물 작성자만 고정 가능
+            raise CommentForbidden(str(comment_id))
+        comment = await self.repo.set_pinned(comment, pinned)
+        await self.session.commit()
+        await self.session.refresh(comment, ["user"])
+        # 메타 재주입 (응답용)
+        comment.is_mine = comment.user_id == user_id
+        comment.can_pin = True
+        comment.reply_count = 0
+        comment.like_count = await self.like_repo.count(comment_id=comment.id)
+        comment.liked_by_me = await self.like_repo.exists(
+            user_id=user_id, comment_id=comment.id
+        )
+        logger.info(
+            "comment_pin_set",
+            comment_id=str(comment_id),
+            pinned=pinned,
+        )
+        return comment

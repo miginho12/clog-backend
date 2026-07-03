@@ -16,6 +16,7 @@ from app.domain.comments.dependencies import CommentServiceDep
 from app.domain.comments.schemas import (
     CommentCreate,
     CommentListResponse,
+    CommentPinRequest,
     CommentResponse,
     CommentThread,
     CommentUpdate,
@@ -87,6 +88,23 @@ async def update_comment(
 ) -> CommentResponse:
     comment = await service.update_comment(
         comment_id=comment_id, user_id=user.id, content=payload.content
+    )
+    return CommentResponse.model_validate(comment)
+
+
+@router.patch(
+    "/comments/{comment_id}/pin",
+    response_model=CommentResponse,
+    summary="댓글 고정/해제 (게시물 작성자)",
+)
+async def set_comment_pin(
+    comment_id: UUID,
+    payload: CommentPinRequest,
+    user: CurrentUserDep,
+    service: CommentServiceDep,
+) -> CommentResponse:
+    comment = await service.set_pin(
+        comment_id=comment_id, user_id=user.id, pinned=payload.pinned
     )
     return CommentResponse.model_validate(comment)
 
