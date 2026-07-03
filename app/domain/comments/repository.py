@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -72,7 +72,21 @@ class CommentRepository:
         return comment
 
     async def soft_delete(self, comment: Comment) -> None:
+        """댓글 soft delete. 최상위 댓글이면 그 대댓글들도 함께 삭제.
+
+        (soft delete 는 FK CASCADE 가 안 먹으므로 애플리케이션에서 처리)
+        """
         comment.deleted_at = func.now()
+        # 최상위 댓글이면 활성 대댓글도 일괄 soft delete
+        if comment.parent_id is None:
+            await self.session.execute(
+                update(Comment)
+                .where(
+                    Comment.parent_id == comment.id,
+                    Comment.deleted_at.is_(None),
+                )
+                .values(deleted_at=func.now())
+            )
         await self.session.flush()
 
     async def count_by_log(self, log_id: UUID) -> int:
