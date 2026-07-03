@@ -140,6 +140,7 @@ class CommentPreview(BaseModel):
     id: UUID
     content: str
     like_count: int = 0
+    reply_count: int = 0
     author: CommentPreviewAuthor | None = None
 
     @model_validator(mode="before")

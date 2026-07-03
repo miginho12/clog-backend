@@ -88,6 +88,10 @@ class ClimbingService:
             ):
                 best[c.climbing_log_id] = (c, lc)
 
+        # 선정된 top 댓글들의 대댓글 수 배치 집계
+        top_ids = [c.id for (c, _) in best.values()]
+        reply_counts = await self.comment_repo.reply_counts_by_parents(top_ids)
+
         for log in logs:
             log.comment_count = counts.get(log.id, 0)
             top = best.get(log.id)
@@ -96,6 +100,7 @@ class ClimbingService:
                 # CommentPreview 로 변환 (author 매핑은 validator 가)
                 preview = CommentPreview.model_validate(comment)
                 preview.like_count = lc
+                preview.reply_count = reply_counts.get(comment.id, 0)
                 log.top_comment = preview
             else:
                 log.top_comment = None

@@ -117,3 +117,19 @@ class CommentRepository:
             )
         )
         return list(result.scalars().all())
+
+    async def reply_counts_by_parents(
+        self, parent_ids: list[UUID]
+    ) -> dict[UUID, int]:
+        """여러 부모 댓글의 대댓글 수 배치 집계 (삭제 제외)."""
+        if not parent_ids:
+            return {}
+        result = await self.session.execute(
+            select(Comment.parent_id, func.count())
+            .where(
+                Comment.parent_id.in_(parent_ids),
+                Comment.deleted_at.is_(None),
+            )
+            .group_by(Comment.parent_id)
+        )
+        return {row[0]: int(row[1]) for row in result.all()}
