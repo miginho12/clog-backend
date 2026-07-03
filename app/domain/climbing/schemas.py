@@ -126,6 +126,36 @@ class ClimbingLogAuthor(ClimbingLogBase):
     profile_image_url: str | None = None
 
 
+class CommentPreviewAuthor(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    nickname: str
+    profile_image_url: str | None = None
+
+
+class CommentPreview(BaseModel):
+    """피드 미리보기용 top 댓글 (좋아요 1등)."""
+
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    content: str
+    like_count: int = 0
+    author: CommentPreviewAuthor | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _map_author(cls, data):
+        if isinstance(data, dict):
+            return data
+        user = getattr(data, "user", None)
+        if user is not None and getattr(data, "author", None) is None:
+            try:
+                data.author = CommentPreviewAuthor.model_validate(user)
+            except Exception:
+                pass
+        return data
+
+
 class ClimbingLogResponse(ClimbingLogBase):
     """클라이밍 기록 응답."""
 
@@ -147,6 +177,8 @@ class ClimbingLogResponse(ClimbingLogBase):
     author: ClimbingLogAuthor | None = None
     like_count: int = 0
     liked_by_me: bool = False
+    comment_count: int = 0
+    top_comment: CommentPreview | None = None
 
     @model_validator(mode="before")
     @classmethod

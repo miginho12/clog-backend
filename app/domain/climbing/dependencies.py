@@ -8,6 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.domain.climbing.repository import ClimbingRepository
 from app.domain.climbing.service import ClimbingService
 from app.domain.likes.repository import LikeRepository
+from app.domain.comments.repository import CommentRepository
+from app.domain.comment_likes.repository import CommentLikeRepository
 from app.infra.db import get_session
 
 
@@ -25,6 +27,8 @@ def get_climbing_service(
         session=session,
         repository=repository,
         like_repo=LikeRepository(session),
+        comment_repo=CommentRepository(session),
+        comment_like_repo=CommentLikeRepository(session),
     )
 
 

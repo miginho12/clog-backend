@@ -80,3 +80,40 @@ class CommentRepository:
             )
         )
         return int(result.scalar_one())
+
+    async def count_by_logs(
+        self, log_ids: list[UUID]
+    ) -> dict[UUID, int]:
+        """여러 게시물의 댓글 수 배치 집계 (삭제 제외, N+1 방지)."""
+        if not log_ids:
+            return {}
+        result = await self.session.execute(
+            select(Comment.climbing_log_id, func.count())
+            .where(
+                Comment.climbing_log_id.in_(log_ids),
+                Comment.deleted_at.is_(None),
+            )
+            .group_by(Comment.climbing_log_id)
+        )
+        return {row[0]: int(row[1]) for row in result.all()}
+
+    async def top_level_by_logs(
+        self, log_ids: list[UUID]
+    ) -> list[Comment]:
+        """여러 게시물의 최상위 댓글 전부 (top_comment 후보).
+
+        대댓글 제외(parent_id IS NULL), 작성자 eager load.
+        게시물별 좋아요 1등 선정은 service 에서.
+        """
+        if not log_ids:
+            return []
+        result = await self.session.execute(
+            select(Comment)
+            .options(selectinload(Comment.user))
+            .where(
+                Comment.climbing_log_id.in_(log_ids),
+                Comment.parent_id.is_(None),
+                Comment.deleted_at.is_(None),
+            )
+        )
+        return list(result.scalars().all())

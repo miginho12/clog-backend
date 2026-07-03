@@ -19,6 +19,9 @@ from app.domain.climbing.exceptions import (
 from app.domain.climbing.models import ClimbingLog
 from app.domain.climbing.repository import ClimbingRepository
 from app.domain.likes.repository import LikeRepository
+from app.domain.comments.repository import CommentRepository
+from app.domain.comment_likes.repository import CommentLikeRepository
+from app.domain.climbing.schemas import CommentPreview
 
 logger = get_logger(__name__)
 
@@ -29,10 +32,14 @@ class ClimbingService:
         session: AsyncSession,
         repository: ClimbingRepository,
         like_repo: LikeRepository,
+        comment_repo: CommentRepository,
+        comment_like_repo: CommentLikeRepository,
     ):
         self.session = session
         self.repo = repository
         self.like_repo = like_repo
+        self.comment_repo = comment_repo
+        self.comment_like_repo = comment_like_repo
 
     async def _attach_likes(
         self, logs: list[ClimbingLog], viewer_id: UUID | None
@@ -50,6 +57,48 @@ class ClimbingService:
         for log in logs:
             log.like_count = counts.get(log.id, 0)
             log.liked_by_me = log.id in liked
+
+    async def _attach_comments(
+        self, logs: list[ClimbingLog], viewer_id: UUID | None
+    ) -> None:
+        """log 객체들에 comment_count + top_comment(좋아요 1등) 주입.
+
+        배치: ① 게시물별 댓글수 ② 최상위 댓글 후보 ③ 후보 좋아요수
+        ④ 게시물별 max 선정. (viewer_id 는 미리보기엔 미사용 — 수/내용만)
+        """
+        if not logs:
+            return
+        ids = [log.id for log in logs]
+        counts = await self.comment_repo.count_by_logs(ids)
+        candidates = await self.comment_repo.top_level_by_logs(ids)
+
+        # 후보 댓글들의 좋아요 수 배치
+        cand_ids = [c.id for c in candidates]
+        like_counts = await self.comment_like_repo.count_by_comments(cand_ids)
+
+        # 게시물별 최고 좋아요 댓글 선정 (동점이면 최신 created_at)
+        best: dict = {}  # log_id -> (comment, like_count)
+        for c in candidates:
+            lc = like_counts.get(c.id, 0)
+            cur = best.get(c.climbing_log_id)
+            if (
+                cur is None
+                or lc > cur[1]
+                or (lc == cur[1] and c.created_at > cur[0].created_at)
+            ):
+                best[c.climbing_log_id] = (c, lc)
+
+        for log in logs:
+            log.comment_count = counts.get(log.id, 0)
+            top = best.get(log.id)
+            if top is not None:
+                comment, lc = top
+                # CommentPreview 로 변환 (author 매핑은 validator 가)
+                preview = CommentPreview.model_validate(comment)
+                preview.like_count = lc
+                log.top_comment = preview
+            else:
+                log.top_comment = None
 
     # ── 작성 ──
 
@@ -88,6 +137,7 @@ class ClimbingService:
             raise ClimbingLogNotFound(str(log_id))
 
         await self._attach_likes([log], viewer_id)
+        await self._attach_comments([log], viewer_id)
         return log
 
     # ── 피드 조회 ──
@@ -96,6 +146,7 @@ class ClimbingService:
         viewer_id = kwargs.get("viewer_id")
         logs, has_next = await self.repo.list_feed(**kwargs)
         await self._attach_likes(logs, viewer_id)
+        await self._attach_comments(logs, viewer_id)
         return logs, has_next
 
     # ── 수정 (본인만) ──
