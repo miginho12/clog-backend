@@ -14,6 +14,7 @@ from app.api.routes import (
     auth,
     climbing,
     comment_likes,
+    notifications,
     comments,
     grade,
     gym_grade_systems,
@@ -109,6 +110,7 @@ def create_app() -> FastAPI:
     app.include_router(likes.router)
     app.include_router(comments.router)
     app.include_router(comment_likes.router)
+    app.include_router(notifications.router)
 
     # ── 루트 ──
     @app.get("/", tags=["root"])

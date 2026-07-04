@@ -9,6 +9,8 @@ from app.domain.climbing.repository import ClimbingRepository
 from app.domain.comment_likes.repository import CommentLikeRepository
 from app.domain.comments.repository import CommentRepository
 from app.domain.comments.service import CommentService
+from app.domain.notifications.repository import NotificationRepository
+from app.domain.notifications.service import NotificationService
 from app.infra.db import get_session
 
 
@@ -20,6 +22,9 @@ def get_comment_service(
         repository=CommentRepository(session),
         climbing_repo=ClimbingRepository(session),
         like_repo=CommentLikeRepository(session),
+        notification_service=NotificationService(
+            session, NotificationRepository(session)
+        ),
     )
 
 

@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.logging import get_logger
 from app.domain.climbing.repository import ClimbingRepository
 from app.domain.comment_likes.repository import CommentLikeRepository
+from app.domain.notifications.service import NotificationService
 from app.domain.comments.exceptions import (
     CommentForbidden,
     CommentNotFound,
@@ -26,9 +27,11 @@ class CommentService:
         repository: CommentRepository,
         climbing_repo: ClimbingRepository,
         like_repo: CommentLikeRepository,
+        notification_service: "NotificationService",
     ):
         self.session = session
         self.repo = repository
+        self.notification_service = notification_service
         self.climbing_repo = climbing_repo
         self.like_repo = like_repo
 
@@ -139,6 +142,25 @@ class CommentService:
             content=content,
             parent_id=parent_id,
         )
+        # 알림 생성 (commit 전 — 같은 트랜잭션)
+        if parent_id is None:
+            # 최상위 댓글 → 게시물 주인에게
+            await self.notification_service.notify_post_comment(
+                recipient_id=log.user_id,
+                actor_id=user_id,
+                climbing_log_id=log_id,
+                comment_id=comment.id,
+            )
+        else:
+            # 대댓글 → 부모 댓글 작성자에게
+            parent_author = await self.repo.get_by_id(parent_id)
+            if parent_author is not None:
+                await self.notification_service.notify_comment_reply(
+                    recipient_id=parent_author.user_id,
+                    actor_id=user_id,
+                    climbing_log_id=log_id,
+                    comment_id=comment.id,
+                )
         await self.session.commit()
         await self.session.refresh(comment, ["user"])
         comment.is_mine = True

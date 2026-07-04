@@ -21,12 +21,13 @@ class LikeRepository:
         )
         return result.scalar_one_or_none() is not None
 
-    async def add(self, *, user_id: UUID, log_id: UUID) -> None:
-        # UNIQUE 제약으로 중복은 DB 레벨에서 방지. 이미 있으면 무시(idempotent).
+    async def add(self, *, user_id: UUID, log_id: UUID) -> bool:
+        """좋아요 추가. 새로 추가하면 True, 이미 있으면 False (idempotent)."""
         if await self.exists(user_id=user_id, log_id=log_id):
-            return
+            return False
         self.session.add(Like(user_id=user_id, climbing_log_id=log_id))
         await self.session.flush()
+        return True
 
     async def remove(self, *, user_id: UUID, log_id: UUID) -> None:
         await self.session.execute(
