@@ -8,7 +8,7 @@ Day 11B + Day 12:
 - KakaoOAuthService (⭐ Day 12)
 """
 
-from typing import Annotated, AsyncIterator
+from typing import Annotated
 
 import httpx
 from fastapi import Depends, Request
@@ -24,7 +24,6 @@ from app.domain.users.repository import UserRepository
 from app.infra.db import get_session
 from app.infra.kakao import KakaoOAuthClient
 from app.infra.redis import get_redis
-
 
 # ─────────────────────────────────────────
 #  기본 클라이언트

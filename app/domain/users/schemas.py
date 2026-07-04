@@ -1,8 +1,9 @@
 """User 도메인 Pydantic schemas."""
 
 from datetime import datetime
-from uuid import UUID
 from typing import Literal
+from uuid import UUID
+
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 

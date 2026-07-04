@@ -1,5 +1,6 @@
 """Comments 도메인 스키마."""
 
+import contextlib
 from datetime import datetime
 from uuid import UUID
 
@@ -48,10 +49,8 @@ class CommentResponse(BaseModel):
             return data
         user = getattr(data, "user", None)
         if user is not None and getattr(data, "author", None) is None:
-            try:
+            with contextlib.suppress(Exception):
                 data.author = CommentAuthor.model_validate(user)
-            except Exception:
-                pass
         return data
 
 

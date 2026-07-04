@@ -10,8 +10,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, status
 
-from app.api.dependencies import CurrentUserDep
-from app.api.routes.climbing import OptionalUserId
+from app.api.dependencies import CurrentUserDep, OptionalUserId
 from app.domain.comments.dependencies import CommentServiceDep
 from app.domain.comments.schemas import (
     CommentCreate,

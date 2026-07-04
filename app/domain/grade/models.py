@@ -40,7 +40,6 @@ class GymGradeSystem(Base):
         String(100),
         nullable=False,
         unique=True,
-        index=True,
         comment="짐(암장) 이름 — climbing_logs.gym_name 과 매칭",
     )
 

@@ -23,6 +23,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -32,14 +33,22 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import ARRAY, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.infra.db.base import Base
 from app.domain.users.models import User
+from app.infra.db.base import Base
 
 
 class ClimbingLog(Base):
     """클라이밍 기록 (한 문제 단위)."""
 
     __tablename__ = "climbing_logs"
+    __table_args__ = (
+        # ADR-038: categories text[] 태그 검색용 GIN 인덱스
+        Index(
+            "ix_climbing_logs_categories",
+            "categories",
+            postgresql_using="gin",
+        ),
+    )
 
     # ── 식별자 ──
     id: Mapped[uuid.UUID] = mapped_column(

@@ -4,7 +4,6 @@ CRUD + 피드 조회 (공개 범위 / 카테고리 / 짐 필터, 페이지네이
 users/repository.py 패턴 동일.
 """
 
-from datetime import date
 from uuid import UUID
 
 from sqlalchemy import select

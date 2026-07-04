@@ -11,7 +11,7 @@
 import argparse
 import asyncio
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 
@@ -19,8 +19,8 @@ from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.domain.climbing.models import ClimbingLog
 from app.domain.media.service import MediaService
-from app.infra.db.engine import close_engine, init_engine
 from app.infra.db import get_sessionmaker
+from app.infra.db.engine import close_engine, init_engine
 
 logger = get_logger(__name__)
 
@@ -31,7 +31,7 @@ RETENTION_DAYS = int(os.getenv("MEDIA_RECONCILE_RETENTION_DAYS", "2"))
 
 async def collect_referenced_keys(media: MediaService) -> set[str]:
     """보존해야 할 object_key 집합 수집."""
-    cutoff = datetime.now(timezone.utc) - timedelta(days=RETENTION_DAYS)
+    cutoff = datetime.now(UTC) - timedelta(days=RETENTION_DAYS)
     sm = get_sessionmaker()
     referenced: set[str] = set()
     async with sm() as session:

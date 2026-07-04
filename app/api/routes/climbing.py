@@ -12,19 +12,12 @@
 → 비로그인도 공개글 조회 가능 (ADR-033).
 """
 
-from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Request, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi import APIRouter, Query, status
+from fastapi.security import HTTPBearer
 
-from app.api.dependencies import CurrentUserDep
-from app.core.security import (
-    InvalidToken,
-    TokenExpired,
-    WrongTokenType,
-    decode_access_token,
-)
+from app.api.dependencies import CurrentUserDep, OptionalUserId
 from app.domain.climbing.dependencies import ClimbingServiceDep
 from app.domain.climbing.schemas import (
     SUGGESTED_CATEGORIES,
@@ -40,27 +33,7 @@ router = APIRouter(prefix="/climbing-logs", tags=["climbing"])
 _optional_bearer = HTTPBearer(auto_error=False)
 
 
-async def get_optional_user_id(
-    credentials: Annotated[
-        HTTPAuthorizationCredentials | None, Depends(_optional_bearer)
-    ],
-) -> UUID | None:
-    """선택적 인증: 유효한 토큰이면 user_id, 아니면 None.
 
-    피드/상세 조회에서 사용 — 비로그인도 허용하되, 로그인하면
-    본인의 private 글까지 볼 수 있도록 viewer_id 를 넘긴다.
-    """
-    if credentials is None:
-        return None
-    try:
-        payload = decode_access_token(credentials.credentials)
-        return UUID(payload.sub)
-    except (TokenExpired, InvalidToken, WrongTokenType, ValueError):
-        # 토큰이 있지만 유효하지 않으면 그냥 비로그인 취급
-        return None
-
-
-OptionalUserId = Annotated[UUID | None, Depends(get_optional_user_id)]
 
 
 # ─────────────────────────────────────────

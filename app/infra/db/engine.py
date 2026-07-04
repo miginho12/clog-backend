@@ -6,7 +6,6 @@
 Spring 의 EntityManagerFactory / DataSource 와 비슷한 역할.
 """
 
-from collections.abc import AsyncIterator
 
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 

@@ -1,21 +1,32 @@
 """FastAPI 애플리케이션 엔트리포인트."""
 
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import AsyncIterator
 
 import httpx
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi.middleware import SlowAPIMiddleware
-from starlette_prometheus import metrics, PrometheusMiddleware
+from starlette_prometheus import PrometheusMiddleware, metrics
 
 from app.api.exception_handlers import register_exception_handlers
-from app.api.routes import auth, climbing, comment_likes, comments, grade, gym_grade_systems, health, likes, media, users
+from app.api.routes import (
+    auth,
+    climbing,
+    comment_likes,
+    comments,
+    grade,
+    gym_grade_systems,
+    health,
+    likes,
+    media,
+    users,
+)
 from app.core.config import get_settings
-from app.core.logging import setup_logging, get_logger
+from app.core.logging import get_logger, setup_logging
 from app.core.rate_limit import limiter
-from app.infra.db.engine import close_engine, get_engine, init_engine
-from app.infra.redis import close_redis, get_redis, init_redis
+from app.infra.db.engine import close_engine, init_engine
+from app.infra.redis import close_redis, init_redis
 
 logger = get_logger(__name__)
 

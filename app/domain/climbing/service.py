@@ -18,10 +18,10 @@ from app.domain.climbing.exceptions import (
 )
 from app.domain.climbing.models import ClimbingLog
 from app.domain.climbing.repository import ClimbingRepository
-from app.domain.likes.repository import LikeRepository
-from app.domain.comments.repository import CommentRepository
-from app.domain.comment_likes.repository import CommentLikeRepository
 from app.domain.climbing.schemas import CommentPreview
+from app.domain.comment_likes.repository import CommentLikeRepository
+from app.domain.comments.repository import CommentRepository
+from app.domain.likes.repository import LikeRepository
 
 logger = get_logger(__name__)
 

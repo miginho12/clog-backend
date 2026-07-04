@@ -6,7 +6,6 @@ from pydantic import BaseModel, Field
 
 from app.core.security import TokenPair
 
-
 # ─────────────────────────────────────────
 #  Request
 # ─────────────────────────────────────────

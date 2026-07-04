@@ -68,14 +68,14 @@ async def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="token expired",
             headers={"WWW-Authenticate": 'Bearer error="invalid_token"'},
-        )
+        ) from None
     except (InvalidToken, WrongTokenType) as e:
         logger.warning("auth_failed_invalid_token", error=str(e))
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="invalid token",
             headers={"WWW-Authenticate": "Bearer"},
-        )
+        ) from e
 
     # 4. User 조회
     try:
@@ -85,7 +85,7 @@ async def get_current_user(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="invalid token subject",
-        )
+        ) from None
 
     user = await user_repo.get_by_id_active(user_id)
     if user is None:
@@ -101,6 +101,38 @@ async def get_current_user(
 
 # 짧은 사용을 위한 타입 alias
 CurrentUserDep = Annotated[User, Depends(get_current_user)]
+
+
+# ─────────────────────────────────────────
+#  선택적 인증 (비로그인 허용 조회용)
+# ─────────────────────────────────────────
+
+# auto_error=False: 토큰 없어도 통과 (None 반환)
+_optional_bearer = HTTPBearer(auto_error=False)
+
+
+async def get_optional_user_id(
+    credentials: Annotated[
+        HTTPAuthorizationCredentials | None, Depends(_optional_bearer)
+    ],
+) -> UUID | None:
+    """선택적 인증: 유효한 토큰이면 user_id, 아니면 None.
+
+    피드/상세/댓글 조회에서 사용 — 비로그인도 허용하되, 로그인하면
+    본인의 private 글까지 볼 수 있도록 viewer_id 를 넘긴다.
+    """
+    if credentials is None:
+        return None
+    try:
+        payload = decode_access_token(credentials.credentials)
+        return UUID(payload.sub)
+    except (TokenExpired, InvalidToken, WrongTokenType, ValueError):
+        # 토큰이 있지만 유효하지 않으면 비로그인 취급
+        return None
+
+
+# 짧은 사용을 위한 타입 alias
+OptionalUserId = Annotated[UUID | None, Depends(get_optional_user_id)]
 
 
 # ─────────────────────────────────────────

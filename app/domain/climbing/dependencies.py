@@ -7,9 +7,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.climbing.repository import ClimbingRepository
 from app.domain.climbing.service import ClimbingService
-from app.domain.likes.repository import LikeRepository
-from app.domain.comments.repository import CommentRepository
 from app.domain.comment_likes.repository import CommentLikeRepository
+from app.domain.comments.repository import CommentRepository
+from app.domain.likes.repository import LikeRepository
 from app.infra.db import get_session
 
 

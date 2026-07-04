@@ -6,8 +6,8 @@ from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.climbing.repository import ClimbingRepository
-from app.domain.comments.repository import CommentRepository
 from app.domain.comment_likes.repository import CommentLikeRepository
+from app.domain.comments.repository import CommentRepository
 from app.domain.comments.service import CommentService
 from app.infra.db import get_session
 

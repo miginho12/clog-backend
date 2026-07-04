@@ -10,7 +10,6 @@
 
 from pydantic import BaseModel, ConfigDict, Field
 
-
 # ─────────────────────────────────────────
 #  카카오 토큰 응답
 # ─────────────────────────────────────────
@@ -91,9 +90,13 @@ class KakaoUserInfo(BaseModel):
 
     def get_email(self) -> str | None:
         """이메일 추출 (동의했고 유효한 경우만)."""
-        if self.kakao_account and self.kakao_account.email:
-            if self.kakao_account.is_email_valid and self.kakao_account.is_email_verified:
-                return self.kakao_account.email
+        if (
+            self.kakao_account
+            and self.kakao_account.email
+            and self.kakao_account.is_email_valid
+            and self.kakao_account.is_email_verified
+        ):
+            return self.kakao_account.email
         return None
 
     @property

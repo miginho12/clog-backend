@@ -10,13 +10,13 @@ Base.metadata 에 등록됨 → autogenerate 가 감지.
 새 모델 추가 시 여기에 한 줄만 추가.
 """
 
-from app.infra.db.base import Base
-from app.domain.users.models import User  # noqa: F401
 from app.domain.climbing.models import ClimbingLog  # noqa: F401
+from app.domain.comment_likes.models import CommentLike  # noqa: F401
+from app.domain.comments.models import Comment  # noqa: F401
 from app.domain.grade.models import GymGradeSystem  # noqa: F401
 from app.domain.likes.models import Like  # noqa: F401
-from app.domain.comments.models import Comment  # noqa: F401
-from app.domain.comment_likes.models import CommentLike  # noqa: F401
+from app.domain.users.models import User  # noqa: F401
+from app.infra.db.base import Base
 
 # 다음 세션에 추가될 모델들:
 # from app.domain.gyms.models import Gym  # noqa: F401

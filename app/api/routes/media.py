@@ -2,9 +2,9 @@
 
 from fastapi import APIRouter
 
+from app.api.dependencies import CurrentUserDep
 from app.domain.media.dependencies import MediaServiceDep
 from app.domain.media.schemas import PresignRequest, PresignResponse
-from app.api.dependencies import CurrentUserDep
 
 router = APIRouter(prefix="/media", tags=["media"])
 

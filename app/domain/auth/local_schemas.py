@@ -8,7 +8,6 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from app.core.password import PasswordPolicyError, validate_password_policy
 
-
 # ─────────────────────────────────────────
 #  Request
 # ─────────────────────────────────────────

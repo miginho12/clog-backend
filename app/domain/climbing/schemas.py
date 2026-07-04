@@ -1,5 +1,6 @@
 """Climbing 도메인 Pydantic schemas."""
 
+import contextlib
 from datetime import date, datetime
 from typing import Literal
 from uuid import UUID
@@ -150,10 +151,8 @@ class CommentPreview(BaseModel):
             return data
         user = getattr(data, "user", None)
         if user is not None and getattr(data, "author", None) is None:
-            try:
+            with contextlib.suppress(Exception):
                 data.author = CommentPreviewAuthor.model_validate(user)
-            except Exception:
-                pass
         return data
 
 
@@ -191,10 +190,8 @@ class ClimbingLogResponse(ClimbingLogBase):
             return data
         user = getattr(data, "user", None)
         if user is not None and getattr(data, "author", None) is None:
-            try:
+            with contextlib.suppress(Exception):
                 data.author = ClimbingLogAuthor.model_validate(user)
-            except Exception:
-                pass
         return data
 
 

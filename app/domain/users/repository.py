@@ -85,9 +85,9 @@ class UserRepository:
         """
         # 닉네임 길이 제한 (모델: 50자)
         # suffix 붙일 공간 확보 (최대 _99 = 3자) → 47자까지만
-        MAX_BASE_LENGTH = 47
-        if len(base_nickname) > MAX_BASE_LENGTH:
-            base_nickname = base_nickname[:MAX_BASE_LENGTH]
+        max_base_length = 47
+        if len(base_nickname) > max_base_length:
+            base_nickname = base_nickname[:max_base_length]
 
         # 1차 시도: 원본
         if await self.get_by_nickname(base_nickname) is None:

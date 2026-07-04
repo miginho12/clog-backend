@@ -23,7 +23,6 @@ from app.domain.climbing.exceptions import (
     ClimbingLogForbidden,
     ClimbingLogNotFound,
 )
-from app.domain.likes.exceptions import LikeTargetNotFound
 from app.domain.comment_likes.exceptions import CommentLikeTargetNotFound
 from app.domain.comments.exceptions import (
     CommentForbidden,
@@ -37,6 +36,7 @@ from app.domain.grade.exceptions import (
     GymGradeSystemNotFound,
     GymGradeSystemNotFoundById,
 )
+from app.domain.likes.exceptions import LikeTargetNotFound
 from app.domain.media.service import MediaError
 from app.domain.users.exceptions import (
     EmailAlreadyExists,

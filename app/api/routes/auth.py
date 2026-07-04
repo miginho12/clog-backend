@@ -17,6 +17,7 @@ from app.api.dependencies import CurrentUserDep
 from app.core.config import get_settings
 from app.core.rate_limit import RateLimits, limiter
 from app.domain.auth.dependencies import AuthServiceDep, KakaoOAuthServiceDep
+from app.domain.auth.local_schemas import LocalLoginRequest, SignupRequest
 from app.domain.auth.schemas import (
     AccessTokenResponse,
     LoginRequest,
@@ -25,8 +26,6 @@ from app.domain.auth.schemas import (
     TokenResponse,
 )
 from app.domain.users.schemas import UserResponse
-from app.domain.auth.local_schemas import LocalLoginRequest, SignupRequest
-
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 

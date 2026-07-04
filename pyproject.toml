@@ -53,7 +53,7 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP", "B", "SIM"]
-ignore = ["E501"]
+ignore = ["E501", "B008", "N818"]  # B008: FastAPI 패턴 / N818: 예외명은 도메인 일관 스타일(~NotFound/~Forbidden) 유지
 
 [tool.mypy]
 python_version = "3.12"

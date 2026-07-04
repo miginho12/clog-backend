@@ -24,8 +24,8 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.infra.db.base import Base
 from app.domain.users.models import User
+from app.infra.db.base import Base
 
 
 class Comment(Base):
