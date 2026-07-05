@@ -171,6 +171,7 @@ class ClimbingLogResponse(ClimbingLogBase):
     climbed_at: date
     media_type: str | None
     media_url: str | None
+    media_status: str | None = None
     visibility: str
     created_at: datetime
     updated_at: datetime

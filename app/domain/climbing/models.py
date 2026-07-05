@@ -132,7 +132,26 @@ class ClimbingLog(Base):
     media_url: Mapped[str | None] = mapped_column(
         String(500),
         nullable=True,
-        comment="미디어 URL",
+        comment="미디어 URL (영상은 압축 완료 후 압축본, 이미지는 원본)",
+    )
+    # ── 미디어 처리 상태 (비동기 트랜스코딩 파이프라인) ──
+    # null: 미디어 없음 or 이미지(압축 불필요, 즉시 공개)
+    # processing: 원본 업로드됨, 압축 대기/진행 중 (피드에서 숨김)
+    # done: 압축 완료, media_url=압축본 (공개)
+    # failed: 압축 실패 (숨김 유지)
+    media_status: Mapped[Literal["processing", "done", "failed"] | None] = (
+        mapped_column(
+            String(20),
+            nullable=True,
+            index=True,
+            comment="미디어 처리 상태 (processing | done | failed, null=이미지/없음)",
+        )
+    )
+    # 원본 영상 URL (압축 소스 — 압축 완료 후 정리 대상)
+    original_media_url: Mapped[str | None] = mapped_column(
+        String(500),
+        nullable=True,
+        comment="원본 영상 URL (트랜스코딩 소스, 압축 후 삭제)",
     )
 
     # ── 공개 범위 ──

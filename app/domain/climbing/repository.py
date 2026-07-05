@@ -6,7 +6,7 @@ users/repository.py 패턴 동일.
 
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -83,14 +83,19 @@ class ClimbingRepository:
         반환: (items, has_next)
         """
         stmt = select(ClimbingLog).options(selectinload(ClimbingLog.user)).where(
-            ClimbingLog.deleted_at.is_(None)
+            ClimbingLog.deleted_at.is_(None),
+            # 미디어 처리 완료(done) 또는 미디어없음/이미지(null)만 노출.
+            # processing/failed 는 피드·프로필에서 숨김 (압축 완료 후 등장)
+            or_(
+                ClimbingLog.media_status.is_(None),
+                ClimbingLog.media_status == "done",
+            ),
         )
 
         # 공개 범위
         if viewer_id is None:
             stmt = stmt.where(ClimbingLog.visibility == "public")
         else:
-            from sqlalchemy import or_
 
             stmt = stmt.where(
                 or_(
