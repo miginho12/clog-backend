@@ -108,6 +108,16 @@ class ClimbingService:
     # ── 작성 ──
 
     async def create_log(self, *, user_id: UUID, data: dict) -> ClimbingLog:
+        # 영상이면 트랜스코딩 파이프라인 진입:
+        #   원본을 original_media_url 로 보관, media_url 은 압축 완료까지 None,
+        #   media_status=processing (피드에서 숨김). 워커가 압축 후 done 전환.
+        if data.get("media_type") == "video" and data.get("media_url"):
+            data = {
+                **data,
+                "original_media_url": data["media_url"],
+                "media_url": None,
+                "media_status": "processing",
+            }
         log = await self.repo.create(user_id=user_id, **data)
         await self.session.commit()
         # author 응답 매핑을 위해 user 관계까지 eager load (lazy=raise 대응)

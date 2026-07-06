@@ -7,7 +7,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.logging import get_logger
 from app.domain.climbing.repository import ClimbingRepository
 from app.domain.comment_likes.repository import CommentLikeRepository
-from app.domain.notifications.service import NotificationService
 from app.domain.comments.exceptions import (
     CommentForbidden,
     CommentNotFound,
@@ -16,6 +15,7 @@ from app.domain.comments.exceptions import (
 )
 from app.domain.comments.models import Comment
 from app.domain.comments.repository import CommentRepository
+from app.domain.notifications.service import NotificationService
 
 logger = get_logger(__name__)
 

@@ -32,10 +32,16 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.infra.db.base import Base
 from app.domain.users.models import User
+from app.infra.db.base import Base
 
-NotificationType = Literal["post_like", "post_comment", "comment_reply"]
+NotificationType = Literal[
+    "post_like",
+    "post_comment",
+    "comment_reply",
+    "media_ready",
+    "media_failed",
+]
 
 
 class Notification(Base):

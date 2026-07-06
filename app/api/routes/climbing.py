@@ -14,7 +14,7 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, Query, Request, status
 from fastapi.security import HTTPBearer
 
 from app.api.dependencies import CurrentUserDep, OptionalUserId
@@ -46,6 +46,7 @@ _optional_bearer = HTTPBearer(auto_error=False)
     summary="클라이밍 기록 작성",
 )
 async def create_climbing_log(
+    request: Request,
     payload: ClimbingLogCreate,
     user: CurrentUserDep,
     service: ClimbingServiceDep,
@@ -53,6 +54,11 @@ async def create_climbing_log(
     log = await service.create_log(
         user_id=user.id, data=payload.model_dump()
     )
+    # 영상이면 트랜스코딩 작업을 큐에 등록 (워커가 백그라운드 처리)
+    if log.media_status == "processing":
+        await request.app.state.arq_pool.enqueue_job(
+            "transcode_video", str(log.id)
+        )
     return ClimbingLogResponse.model_validate(log)
 
 

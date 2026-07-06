@@ -4,6 +4,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 import httpx
+from arq import create_pool
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi.middleware import SlowAPIMiddleware
@@ -14,13 +15,13 @@ from app.api.routes import (
     auth,
     climbing,
     comment_likes,
-    notifications,
     comments,
     grade,
     gym_grade_systems,
     health,
     likes,
     media,
+    notifications,
     users,
 )
 from app.core.config import get_settings
@@ -28,6 +29,7 @@ from app.core.logging import get_logger, setup_logging
 from app.core.rate_limit import limiter
 from app.infra.db.engine import close_engine, init_engine
 from app.infra.redis import close_redis, init_redis
+from app.worker import _redis_settings
 
 logger = get_logger(__name__)
 
@@ -54,12 +56,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # httpx (카카오 OAuth)
     httpx_client = httpx.AsyncClient(timeout=10.0)
     app.state.http_client = httpx_client
+    # ARQ 작업 큐 pool (영상 트랜스코딩 enqueue 용)
+    app.state.arq_pool = await create_pool(_redis_settings())
 
     logger.info("app_started")
 
     yield
 
     logger.info("app_shutting_down")
+    await app.state.arq_pool.aclose()
     await httpx_client.aclose()
     await close_redis()
     await close_engine()

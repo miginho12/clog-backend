@@ -99,6 +99,26 @@ class MediaService:
         """단일 객체 삭제 (멱등 — 없는 키여도 에러 안 냄)."""
         self._client.remove_object(self._bucket, object_key)
 
+    def download_to_file(self, object_key: str, dest_path: str) -> None:
+        """MinIO 객체를 로컬 파일로 다운로드 (트랜스코딩 소스용)."""
+        self._client.fget_object(self._bucket, object_key, dest_path)
+
+    def upload_file(
+        self, object_key: str, src_path: str, content_type: str
+    ) -> str:
+        """로컬 파일을 MinIO 에 업로드하고 public URL 반환 (압축본용)."""
+        self._client.fput_object(
+            self._bucket,
+            object_key,
+            src_path,
+            content_type=content_type,
+        )
+        scheme = "https" if self.settings.minio_secure else "http"
+        endpoint = (
+            self.settings.minio_public_endpoint or self.settings.minio_endpoint
+        )
+        return f"{scheme}://{endpoint}/{self._bucket}/{object_key}"
+
     def extract_object_key(self, media_url: str) -> str | None:
         """media_url 에서 object_key 추출.
 

@@ -6,9 +6,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
 from app.domain.climbing.repository import ClimbingRepository
-from app.domain.notifications.service import NotificationService
 from app.domain.likes.exceptions import LikeTargetNotFound
 from app.domain.likes.repository import LikeRepository
+from app.domain.notifications.service import NotificationService
 
 logger = get_logger(__name__)
 

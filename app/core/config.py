@@ -94,12 +94,33 @@ class Settings(BaseSettings):
     redis_socket_timeout: int = Field(default=5)
     redis_connect_timeout: int = Field(default=5)
 
+    # ── 트랜스코딩 워커 (ARQ) ──
+    # 작업 큐 전용 Redis DB (기존 캐시/세션과 분리)
+    arq_redis_db: int = Field(default=1)
+    # ffmpeg 트랜스코딩 프리셋 (벤치마크 근거: 720p CRF23)
+    transcode_scale: str = Field(default="1280:720")
+    transcode_crf: int = Field(default=23)
+    transcode_preset: str = Field(default="veryfast")
+    transcode_audio_bitrate: str = Field(default="128k")
+    # 워커 동시 처리 수 (라파이 부담 제한)
+    transcode_max_jobs: int = Field(default=1)
+    # 트랜스코딩 타임아웃 (초)
+    transcode_timeout: int = Field(default=600)
+
     @computed_field  # type: ignore[misc]
     @property
     def redis_url(self) -> str:
         if self.redis_password:
             return f"redis://:{self.redis_password}@{self.redis_host}:{self.redis_port}/{self.redis_db}"
         return f"redis://{self.redis_host}:{self.redis_port}/{self.redis_db}"
+
+    @computed_field  # type: ignore[misc]
+    @property
+    def arq_redis_url(self) -> str:
+        """ARQ 작업 큐용 Redis URL (전용 DB)."""
+        if self.redis_password:
+            return f"redis://:{self.redis_password}@{self.redis_host}:{self.redis_port}/{self.arq_redis_db}"
+        return f"redis://{self.redis_host}:{self.redis_port}/{self.arq_redis_db}"
 
     @computed_field  # type: ignore[misc]
     @property

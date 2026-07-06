@@ -6,9 +6,9 @@
 - 좋아요는 토글이라 취소 시 알림도 삭제
 """
 
-import structlog
 from uuid import UUID
 
+import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.notifications.models import Notification
@@ -105,6 +105,41 @@ class NotificationService:
             type="comment_reply",
             recipient=str(recipient_id),
             actor=str(actor_id),
+        )
+
+    async def notify_media_ready(
+        self, *, recipient_id: UUID, climbing_log_id: UUID
+    ) -> None:
+        """영상 압축 완료 알림 (시스템 → 작성자 본인).
+
+        시스템 알림이라 actor=recipient(본인)여도 생성 (자기 행동 제외 안 함).
+        """
+        await self.repo.create(
+            recipient_id=recipient_id,
+            actor_id=recipient_id,  # 시스템 알림 (본인)
+            type="media_ready",
+            climbing_log_id=climbing_log_id,
+        )
+        logger.info(
+            "notification_created",
+            type="media_ready",
+            recipient=str(recipient_id),
+        )
+
+    async def notify_media_failed(
+        self, *, recipient_id: UUID, climbing_log_id: UUID
+    ) -> None:
+        """영상 압축 실패 알림 (시스템 → 작성자 본인)."""
+        await self.repo.create(
+            recipient_id=recipient_id,
+            actor_id=recipient_id,
+            type="media_failed",
+            climbing_log_id=climbing_log_id,
+        )
+        logger.info(
+            "notification_created",
+            type="media_failed",
+            recipient=str(recipient_id),
         )
 
     # ── 조회 (API 용) ──
