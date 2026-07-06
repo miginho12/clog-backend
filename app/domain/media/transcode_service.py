@@ -49,7 +49,14 @@ class TranscodeService:
         s = self.settings
         cmd = [
             "ffmpeg", "-y", "-i", src,
-            "-vf", f"scale={s.transcode_scale}",
+            # 비율 유지 + 긴 변을 max_dimension 이하로 (세로/가로 무관).
+            # force_original_aspect_ratio=decrease: 원본보다 크게 안 늘림.
+            # 짝수 강제(-2 대신 trunc): H.264 는 너비/높이가 짝수여야 함.
+            "-vf", (
+                f"scale=w={s.transcode_max_dimension}:h={s.transcode_max_dimension}"
+                ":force_original_aspect_ratio=decrease"
+                ",scale=trunc(iw/2)*2:trunc(ih/2)*2"
+            ),
             "-c:v", "libx264",
             "-preset", s.transcode_preset,
             "-crf", str(s.transcode_crf),

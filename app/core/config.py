@@ -98,7 +98,8 @@ class Settings(BaseSettings):
     # 작업 큐 전용 Redis DB (기존 캐시/세션과 분리)
     arq_redis_db: int = Field(default=1)
     # ffmpeg 트랜스코딩 프리셋 (벤치마크 근거: 720p CRF23)
-    transcode_scale: str = Field(default="1280:720")
+    # 긴 변을 이 값 이하로 (비율 유지). 세로 영상도 안 짤림
+    transcode_max_dimension: int = Field(default=1280)
     transcode_crf: int = Field(default=23)
     transcode_preset: str = Field(default="veryfast")
     transcode_audio_bitrate: str = Field(default="128k")
