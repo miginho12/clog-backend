@@ -13,6 +13,9 @@ import uuid
 import structlog
 from arq.connections import RedisSettings
 
+# 전체 ORM 모델 로드 — FK 참조(notifications→comments 등) 해결을 위해
+# 모든 테이블이 SQLAlchemy 레지스트리에 등록되어야 함 (API 의 main.py 와 동일)
+import app.infra.db.models  # noqa: F401
 from app.core.config import get_settings
 from app.domain.climbing.repository import ClimbingRepository
 from app.domain.media.service import MediaService
