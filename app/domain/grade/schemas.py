@@ -113,3 +113,11 @@ class GymGradeSystemResponse(BaseModel):
     created_by: UUID | None
     created_at: datetime
     updated_at: datetime
+
+
+class TimelinePoint(BaseModel):
+    """그레이드 추이 한 점 (주별 스냅샷)."""
+
+    date: str  # YYYY-MM-DD
+    score: float
+    count: int  # 그 시점 점수에 반영된 기록 수

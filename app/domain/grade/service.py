@@ -10,7 +10,7 @@ DB 조회가 필요한 집계/CRUD 는 GradeService 에 위치.
 import math
 import re
 from collections import Counter
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from uuid import UUID
 
 from app.domain.grade.exceptions import (
@@ -114,6 +114,80 @@ class GradeService:
             top_rating_label=top_rating_label,
             counted_logs=len(top),
         )
+
+    async def compute_grade_timeline(
+        self, user_id: UUID, weeks: int = 12
+    ) -> list[dict]:
+        """주별 종합 그레이드 점수 추이 (v_scale + color 통합).
+
+        v_scale·color 두 트랙 로그를 하나의 난이도 스케일로 합쳐
+        각 주말(스냅샷) 시점의 종합 점수를 계산한다.
+        - v_scale: difficulty = v+1 (1~18)
+        - color:   difficulty = ratio*10+1 (1~11, ADR-041 v_scale 과 대칭)
+        - 각 시점 이후 로그 제외, today=스냅샷일 로 반감기 반영
+        → 실력 성장 곡선. 안 오르면 반감기로 서서히 하락.
+        반환: [{"date", "score", "count"}, ...]
+        """
+        # (difficulty, climbed_at, is_success, attempts) 로 통일해 미리 파싱
+        parsed: list[tuple[float, date, bool, int]] = []
+
+        # 1) v_scale 로그
+        v_logs = await self.repo.list_user_logs_for_grading(user_id, "v_scale")
+        for log in v_logs:
+            v = parse_v_scale(log.grade_raw)
+            if v is None:
+                continue
+            parsed.append(
+                (float(v + 1), log.climbed_at, log.is_success, log.attempts)
+            )
+
+        # 2) color 로그 (짐 색 순서 → ratio → difficulty)
+        c_logs = await self.repo.list_user_logs_for_grading(user_id, "color")
+        systems = await self.repo.get_systems_map(
+            log.gym_name for log in c_logs if log.gym_name
+        )
+        for log in c_logs:
+            system = systems.get(log.gym_name) if log.gym_name else None
+            if system is None:
+                continue
+            rank = self.repo.color_to_rank(system, log.grade_raw)
+            if rank is None:
+                continue
+            ratio = self.repo.rank_to_ratio(system, rank)
+            parsed.append(
+                (
+                    color_difficulty(ratio),
+                    log.climbed_at,
+                    log.is_success,
+                    log.attempts,
+                )
+            )
+
+        today = datetime.now(UTC).date()
+        points: list[dict] = []
+        for i in range(weeks):
+            snapshot = today - timedelta(weeks=(weeks - 1 - i))
+            contributions = [
+                compute_contribution(
+                    difficulty=diff,
+                    is_success=succ,
+                    attempts=att,
+                    climbed_at=climbed,
+                    today=snapshot,
+                )
+                for (diff, climbed, succ, att) in parsed
+                if climbed <= snapshot
+            ]
+            top = sorted(contributions, reverse=True)[:TOP_N]
+            score = sum(top) / len(top) if top else 0.0
+            points.append(
+                {
+                    "date": snapshot.isoformat(),
+                    "score": round(score, 2),
+                    "count": len(top),
+                }
+            )
+        return points
 
     async def compute_color_grade(
         self, user_id: UUID, base_gym: str | None = None

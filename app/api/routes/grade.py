@@ -14,7 +14,7 @@ from fastapi import APIRouter, Query
 
 from app.api.dependencies import CurrentUserDep
 from app.domain.grade.dependencies import GradeServiceDep
-from app.domain.grade.schemas import MeGradeResponse
+from app.domain.grade.schemas import MeGradeResponse, TimelinePoint
 
 router = APIRouter(prefix="/me", tags=["grade"])
 
@@ -40,3 +40,23 @@ async def get_my_grade(
     v_scale = await service.compute_v_scale_grade(user.id)
     color = await service.compute_color_grade(user.id, base_gym=base_gym)
     return MeGradeResponse(v_scale=v_scale, color=color)
+
+
+@router.get(
+    "/grade/timeline",
+    response_model=list[TimelinePoint],
+    summary="내 그레이드 추이 (주별)",
+    description=(
+        "최근 N주간 주별 종합점수 추이 (v_scale). "
+        "각 주말 시점의 실력 점수를 반감기 반영해 계산한 성장 곡선."
+    ),
+)
+async def get_my_grade_timeline(
+    user: CurrentUserDep,
+    service: GradeServiceDep,
+    weeks: Annotated[
+        int, Query(ge=4, le=52, description="조회 주 수 (기본 12)")
+    ] = 12,
+) -> list[TimelinePoint]:
+    points = await service.compute_grade_timeline(user.id, weeks=weeks)
+    return [TimelinePoint(**p) for p in points]
