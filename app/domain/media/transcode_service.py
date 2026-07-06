@@ -113,17 +113,23 @@ class TranscodeService:
         await self.climbing_repo.update(
             log, media_url=public_url, media_status="done"
         )
+        await self.notification_service.notify_media_ready(
+            recipient_id=log.user_id, climbing_log_id=log.id
+        )
+        # DB 를 먼저 확정(commit)한 뒤에 원본을 삭제한다.
+        # 순서가 중요: 삭제를 commit 전에 하면, 이후 단계 실패로 롤백돼도
+        # MinIO 삭제는 롤백 안 돼 원본이 사라진 채 DB 만 processing 으로 되돌아가
+        # 재시도 불가능해진다 (부분 실패). commit 성공 후 삭제해야 안전.
+        await self.climbing_repo.session.commit()
         try:
             self.media.delete_object(object_key)
         except Exception as e:
+            # 삭제 실패해도 이미 done 커밋됐으니 게시엔 문제없음.
+            # 남은 원본은 media-reconcile CronJob 이 정리.
             logger.warning(
                 "transcode_original_delete_failed",
                 log_id=str(log_id), error=str(e),
             )
-        await self.notification_service.notify_media_ready(
-            recipient_id=log.user_id, climbing_log_id=log.id
-        )
-        await self.climbing_repo.session.commit()
         logger.info("transcode_done", log_id=str(log_id), url=public_url)
 
     async def _mark_failed(self, log, reason: str) -> None:
