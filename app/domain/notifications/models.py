@@ -6,12 +6,13 @@
 - post_like: 내 게시물에 좋아요
 - post_comment: 내 게시물에 댓글
 - comment_reply: 내 댓글에 대댓글
+- follow: 나를 팔로우
 
 설계:
 - recipient_id: 알림 받는 사람 (내 게시물/댓글 주인)
 - actor_id: 행동한 사람 (좋아요/댓글 단 사람)
 - 자기 행동 제외는 service 에서 (recipient == actor 면 생성 안 함)
-- climbing_log_id: 클릭 시 이동할 게시물 (항상)
+- climbing_log_id: 클릭 시 이동할 게시물 (게시물 관련 알림만, nullable)
 - comment_id: 관련 댓글 (댓글/대댓글 알림만, nullable)
 - is_read: 읽음 여부
 """
@@ -41,6 +42,7 @@ NotificationType = Literal[
     "comment_reply",
     "media_ready",
     "media_failed",
+    "follow",
 ]
 
 
@@ -76,10 +78,10 @@ class Notification(Base):
         nullable=False,
         comment="알림 유형 (post_like | post_comment | comment_reply)",
     )
-    climbing_log_id: Mapped[uuid.UUID] = mapped_column(
+    climbing_log_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("climbing_logs.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
         comment="관련 게시물 (클릭 시 이동 대상)",
     )
     comment_id: Mapped[uuid.UUID | None] = mapped_column(

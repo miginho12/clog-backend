@@ -19,7 +19,7 @@ class NotificationRepository:
         recipient_id: UUID,
         actor_id: UUID,
         type: NotificationType,
-        climbing_log_id: UUID,
+        climbing_log_id: UUID | None = None,
         comment_id: UUID | None = None,
     ) -> Notification:
         notification = Notification(
@@ -75,7 +75,7 @@ class NotificationRepository:
         *,
         actor_id: UUID,
         type: NotificationType,
-        climbing_log_id: UUID,
+        climbing_log_id: UUID | None = None,
         comment_id: UUID | None = None,
     ) -> None:
         """특정 이벤트의 알림 제거 (좋아요 취소 시 알림 삭제용).

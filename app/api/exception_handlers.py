@@ -30,6 +30,10 @@ from app.domain.comments.exceptions import (
     CommentParentInvalid,
     CommentTargetNotFound,
 )
+from app.domain.follows.exceptions import (
+    CannotFollowSelf,
+    FollowTargetNotFound,
+)
 from app.domain.grade.exceptions import (
     GymGradeSystemAlreadyExists,
     GymGradeSystemForbidden,
@@ -370,6 +374,18 @@ async def comment_like_target_not_found_handler(request: Request, exc: CommentLi
     return _error_response(404, "COMMENT_LIKE_TARGET_NOT_FOUND", "좋아요 대상 댓글을 찾을 수 없습니다")
 
 
+async def cannot_follow_self_handler(
+    request: Request, exc: CannotFollowSelf
+) -> JSONResponse:
+    return _error_response(400, "CANNOT_FOLLOW_SELF", "자기 자신은 팔로우할 수 없습니다")
+
+
+async def follow_target_not_found_handler(
+    request: Request, exc: FollowTargetNotFound
+) -> JSONResponse:
+    return _error_response(404, "FOLLOW_TARGET_NOT_FOUND", "팔로우 대상 사용자를 찾을 수 없습니다")
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     # User 도메인
     app.add_exception_handler(EmailAlreadyExists, email_already_exists_handler)
@@ -397,6 +413,8 @@ def register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(CommentForbidden, comment_forbidden_handler)
     app.add_exception_handler(CommentParentInvalid, comment_parent_invalid_handler)
     app.add_exception_handler(CommentLikeTargetNotFound, comment_like_target_not_found_handler)
+    app.add_exception_handler(CannotFollowSelf, cannot_follow_self_handler)
+    app.add_exception_handler(FollowTargetNotFound, follow_target_not_found_handler)
     app.add_exception_handler(MediaError, media_error_handler)
 
     # Grade 도메인 (구현 5)

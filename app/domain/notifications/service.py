@@ -47,6 +47,24 @@ class NotificationService:
             actor=str(actor_id),
         )
 
+    async def notify_follow(
+        self, *, recipient_id: UUID, actor_id: UUID
+    ) -> None:
+        """팔로우 알림. actor 가 recipient 를 팔로우. 자기 팔로우는 제외."""
+        if recipient_id == actor_id:
+            return
+        await self.repo.create(
+            recipient_id=recipient_id,
+            actor_id=actor_id,
+            type="follow",
+        )
+        logger.info(
+            "notification_created",
+            type="follow",
+            recipient=str(recipient_id),
+            actor=str(actor_id),
+        )
+
     async def remove_post_like(
         self, *, actor_id: UUID, climbing_log_id: UUID
     ) -> None:

@@ -16,6 +16,7 @@ from app.api.routes import (
     climbing,
     comment_likes,
     comments,
+    follows,
     grade,
     gym_grade_systems,
     health,
@@ -113,6 +114,7 @@ def create_app() -> FastAPI:
     app.include_router(gym_grade_systems.router)
     app.include_router(media.router)
     app.include_router(likes.router)
+    app.include_router(follows.router)
     app.include_router(comments.router)
     app.include_router(comment_likes.router)
     app.include_router(notifications.router)
