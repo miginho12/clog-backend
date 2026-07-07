@@ -101,6 +101,18 @@ class OAuthStateInvalid(AuthDomainError):
 # ─────────────────────────────────────────
 
 
+class EmailNotVerified(Exception):
+    """이메일 미인증 상태로 로그인 시도.
+
+    비밀번호는 맞았으나 이메일 인증 전 → 로그인 차단.
+    (계정 열거 방어 대상 아님: 이미 본인 확인됨)
+    """
+
+    def __init__(self, email: str):
+        self.email = email
+        super().__init__(f"email not verified: {email}")
+
+
 class EmailAlreadyRegistered(AuthDomainError):
     """이미 가입된 이메일로 회원가입 시도.
 

@@ -13,6 +13,13 @@ from app.core.password import PasswordPolicyError, validate_password_policy
 # ─────────────────────────────────────────
 
 
+class SignupResponse(BaseModel):
+    """자체 회원가입 응답 (이메일 인증 안내)."""
+
+    message: str = "인증 메일을 발송했어요. 메일함을 확인해 주세요."
+    email: str
+
+
 class SignupRequest(BaseModel):
     """자체 회원가입 요청.
 

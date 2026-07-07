@@ -144,6 +144,15 @@ class Settings(BaseSettings):
     kakao_token_url: str = "https://kauth.kakao.com/oauth/token"
     kakao_user_info_url: str = "https://kapi.kakao.com/v2/user/me"
 
+    # ── SMTP (이메일 인증) ──
+    smtp_host: str = Field(default="smtp.gmail.com")
+    smtp_port: int = Field(default=587)
+    smtp_user: str = Field(default="")  # Gmail 주소 (Secret 주입)
+    smtp_password: str = Field(default="")  # Gmail 앱 비밀번호 (Secret 주입)
+    smtp_from_name: str = Field(default="Clog")
+    # 이메일 인증 토큰 유효시간 (초). 기본 24시간
+    email_verify_ttl_seconds: int = Field(default=86400)
+
     # ── MinIO (오브젝트 스토리지 / 미디어 업로드) ──
     # 내부: 백엔드가 presigned 발급/관리에 쓰는 클러스터 내부 엔드포인트
     minio_endpoint: str = Field(default="minio.dev.svc.cluster.local:9000")

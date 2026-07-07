@@ -79,6 +79,12 @@ class User(Base):
         nullable=True,
         comment="bcrypt 해시 (local 가입자만, OAuth 가입자는 NULL)",
     )
+    email_verified: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default="false",
+        comment="이메일 인증 완료 여부 (local 가입자, 미인증 시 로그인 차단)",
+    )
 
     # ── 프로필 ──
     profile_image_url: Mapped[str | None] = mapped_column(

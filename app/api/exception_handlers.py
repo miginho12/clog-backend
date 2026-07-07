@@ -7,6 +7,7 @@ from slowapi.errors import RateLimitExceeded
 from app.core.logging import get_logger
 from app.domain.auth.exceptions import (
     EmailAlreadyRegistered,
+    EmailNotVerified,
     InvalidCredentials,
     KakaoAPIError,
     KakaoEmailNotAvailable,
@@ -188,6 +189,16 @@ async def kakao_token_exchange_failed_handler(
 ) -> JSONResponse:
     logger.warning("kakao_token_exchange_failed", kakao_error=exc.error, path=request.url.path)
     return _error_response(400, "KAKAO_TOKEN_EXCHANGE_FAILED", "카카오 인증에 실패했습니다. 다시 시도해주세요.")
+
+
+async def email_not_verified_handler(
+    request: Request, exc: EmailNotVerified
+) -> JSONResponse:
+    return _error_response(
+        403,
+        "EMAIL_NOT_VERIFIED",
+        "이메일 인증이 필요해요. 메일함에서 인증을 완료해 주세요.",
+    )
 
 
 async def kakao_user_info_failed_handler(
@@ -405,6 +416,7 @@ def register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(EmailAlreadyRegistered, email_already_registered_handler)
     app.add_exception_handler(NicknameAlreadyTaken, nickname_already_taken_handler)
     app.add_exception_handler(LocalLoginNotAvailable, local_login_not_available_handler)
+    app.add_exception_handler(EmailNotVerified, email_not_verified_handler)
     app.add_exception_handler(ClimbingLogNotFound, climbing_log_not_found_handler)
     app.add_exception_handler(ClimbingLogForbidden, climbing_log_forbidden_handler)
     app.add_exception_handler(LikeTargetNotFound, like_target_not_found_handler)

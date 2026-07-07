@@ -18,6 +18,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.core.email import send_verification_email
 from app.core.logging import get_logger
 from app.core.password import hash_password, verify_password
 from app.core.security import (
@@ -29,8 +30,10 @@ from app.core.security import (
     create_token_pair,
     decode_refresh_token,
 )
+from app.domain.auth.email_verify_repository import EmailVerifyRepository
 from app.domain.auth.exceptions import (
     EmailAlreadyRegistered,
+    EmailNotVerified,
     InvalidCredentials,
     LocalLoginNotAvailable,
     NicknameAlreadyTaken,
@@ -52,10 +55,12 @@ class AuthService:
         session: AsyncSession,
         refresh_repo: RedisRefreshTokenRepository,
         user_repo: UserRepository,
+        email_verify_repo: EmailVerifyRepository,
     ):
         self.session = session
         self.refresh_repo = refresh_repo
         self.user_repo = user_repo
+        self.email_verify_repo = email_verify_repo
 
     # ─────────────────────────────────────────
     #  자체 회원가입 (Day 17 ⭐)
@@ -68,19 +73,16 @@ class AuthService:
         password: str,
         nickname: str,
         profile_image_url: str | None = None,
-    ) -> tuple[TokenPair, User]:
-        """자체 회원가입.
+    ) -> User:
+        """자체 회원가입 (이메일 인증 방식).
 
         흐름:
         1. 이메일 중복 검사 (OAuth 가입자 포함)
         2. 닉네임 중복 검사
         3. 비밀번호 해싱 (bcrypt)
-        4. User 생성 (auth_provider="local", auth_provider_id=None)
-        5. 토큰 페어 발급 + refresh 저장 → 가입 즉시 로그인 상태
-
-        Note:
-            비밀번호 정책 검증은 이미 스키마(SignupRequest)에서 통과한 상태.
-            여기서는 중복 검사 + 해싱 + 저장만 담당.
+        4. User 생성 (email_verified=False → 인증 전 로그인 불가)
+        5. 인증 토큰 생성 (Redis) + 인증 메일 발송
+        → 토큰 발급 안 함. 사용자는 메일 인증 후 로그인.
 
         Raises:
             EmailAlreadyRegistered: 이메일 중복
@@ -101,7 +103,7 @@ class AuthService:
         # 3. 비밀번호 해싱
         pw_hash = hash_password(password)
 
-        # 4. User 생성 (local 가입자)
+        # 4. User 생성 (local 가입자, email_verified=False 기본)
         user = await self.user_repo.create(
             email=email,
             nickname=nickname,
@@ -110,16 +112,51 @@ class AuthService:
             password_hash=pw_hash,
             profile_image_url=profile_image_url,
         )
-
-        # 5. 커밋 + refresh (트랜잭션 확정)
         await self.session.commit()
         await self.session.refresh(user)
 
-        # 6. 토큰 발급 + refresh 저장
-        pair = await self._issue_token_pair(user.id)
+        # 5. 인증 토큰 생성 + 메일 발송
+        token = await self.email_verify_repo.create(user.id)
+        settings = get_settings()
+        verify_url = f"{settings.frontend_url}/verify?token={token}"
+        try:
+            await send_verification_email(
+                to_email=email,
+                nickname=nickname,
+                verify_url=verify_url,
+            )
+        except Exception as e:
+            # 메일 발송 실패해도 가입은 유지 (재발송 엔드포인트로 커버)
+            logger.error(
+                "verification_email_failed",
+                user_id=str(user.id),
+                error=str(e),
+            )
 
         logger.info("local_signup_success", user_id=str(user.id), email=email)
-        return pair, user
+        return user
+
+    async def verify_email(self, token: str) -> bool:
+        """이메일 인증 토큰 검증 → email_verified=True.
+
+        Returns:
+            True: 인증 성공
+            False: 토큰 무효/만료 (또는 이미 소비됨)
+        """
+        user_id = await self.email_verify_repo.consume(token)
+        if user_id is None:
+            return False
+        user = await self.user_repo.get_by_id(user_id)
+        if user is None:
+            logger.warning("verify_email_user_gone", user_id=str(user_id))
+            return False
+        if user.email_verified:
+            # 이미 인증됨 (중복 클릭 등) — 성공으로 취급
+            return True
+        user.email_verified = True
+        await self.session.commit()
+        logger.info("email_verified", user_id=str(user_id))
+        return True
 
     # ─────────────────────────────────────────
     #  자체 로그인 (Day 17 ⭐)
@@ -158,6 +195,11 @@ class AuthService:
         if not verify_password(password, user.password_hash):
             logger.info("local_login_failed_wrong_password", email=email)
             raise LocalLoginNotAvailable("invalid email or password")
+
+        # 이메일 미인증 → 로그인 차단 (별도 예외로 안내)
+        if not user.email_verified:
+            logger.info("local_login_failed_unverified", email=email)
+            raise EmailNotVerified(email)
 
         pair = await self._issue_token_pair(user.id)
         logger.info("local_login_success", user_id=str(user.id))

@@ -17,7 +17,11 @@ from app.api.dependencies import CurrentUserDep
 from app.core.config import get_settings
 from app.core.rate_limit import RateLimits, limiter
 from app.domain.auth.dependencies import AuthServiceDep, KakaoOAuthServiceDep
-from app.domain.auth.local_schemas import LocalLoginRequest, SignupRequest
+from app.domain.auth.local_schemas import (
+    LocalLoginRequest,
+    SignupRequest,
+    SignupResponse,
+)
 from app.domain.auth.schemas import (
     AccessTokenResponse,
     LoginRequest,
@@ -61,37 +65,49 @@ class LocalAuthResponse(BaseModel):
 
 @router.post(
     "/signup",
-    response_model=LocalAuthResponse,
+    response_model=SignupResponse,
     status_code=status.HTTP_201_CREATED,
     summary="자체 회원가입 (이메일 + 비밀번호)",
     description=(
         "카카오 없이 이메일/비밀번호로 가입. "
         "비밀번호 정책: 최소 12자 + 영문/숫자/특수문자. "
-        "가입 즉시 로그인 상태(토큰 발급)."
+        "가입 후 인증 메일 발송 → 이메일 인증 완료해야 로그인 가능."
     ),
 )
 @limiter.limit(RateLimits.KAKAO_LOGIN)
 async def signup(
     request: Request, payload: SignupRequest, service: AuthServiceDep
-) -> LocalAuthResponse:
-    """자체 회원가입.
+) -> SignupResponse:
+    """자체 회원가입. 인증 메일 발송 (즉시 로그인 아님).
 
     Raises:
         409: 이메일/닉네임 중복 (예외 핸들러에서 변환)
         422: 비밀번호 정책 위반 (스키마 검증)
     """
-    pair, user = await service.signup(
+    user = await service.signup(
         email=payload.email,
         password=payload.password,
         nickname=payload.nickname,
         profile_image_url=payload.profile_image_url,
     )
-    return LocalAuthResponse(
-        access_token=pair.access_token,
-        refresh_token=pair.refresh_token,
-        token_type=pair.token_type,
-        expires_in=pair.expires_in,
-        user=UserResponse.model_validate(user),
+    return SignupResponse(email=user.email)
+
+
+@router.get(
+    "/verify",
+    summary="이메일 인증",
+    description="인증 메일 토큰으로 이메일 인증. 성공/실패 시 프론트 로그인으로 리다이렉트.",
+)
+async def verify_email(
+    token: str, service: AuthServiceDep
+) -> RedirectResponse:
+    """이메일 인증 토큰 처리 → 프론트로 리다이렉트."""
+    _settings = get_settings()
+    ok = await service.verify_email(token)
+    result = "success" if ok else "failed"
+    return RedirectResponse(
+        url=f"{_settings.frontend_url}/login?verified={result}",
+        status_code=status.HTTP_302_FOUND,
     )
 
 

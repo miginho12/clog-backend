@@ -33,6 +33,7 @@ dependencies = [
     "bcrypt>=5.0.0",
     "minio>=7.2.20",
     "arq>=0.28.0",
+    "aiosmtplib>=5.1.2",
 ]
 
 [dependency-groups]

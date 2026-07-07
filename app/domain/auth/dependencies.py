@@ -15,6 +15,7 @@ from fastapi import Depends, Request
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.domain.auth.email_verify_repository import EmailVerifyRepository
 from app.domain.auth.kakao_service import KakaoOAuthService
 from app.domain.auth.repository import RedisRefreshTokenRepository
 from app.domain.auth.service import AuthService
@@ -64,6 +65,12 @@ def get_oauth_state_repository(
     return OAuthStateRepository(redis)
 
 
+def get_email_verify_repository(
+    redis: Annotated[Redis, Depends(get_redis_client)],
+) -> EmailVerifyRepository:
+    return EmailVerifyRepository(redis)
+
+
 # ─────────────────────────────────────────
 #  Kakao 클라이언트
 # ─────────────────────────────────────────
@@ -86,9 +93,15 @@ def get_auth_service(
         RedisRefreshTokenRepository, Depends(get_refresh_token_repository)
     ],
     user_repo: Annotated[UserRepository, Depends(get_user_repository)],
+    email_verify_repo: Annotated[
+        EmailVerifyRepository, Depends(get_email_verify_repository)
+    ],
 ) -> AuthService:
     return AuthService(
-        session=session, refresh_repo=refresh_repo, user_repo=user_repo
+        session=session,
+        refresh_repo=refresh_repo,
+        user_repo=user_repo,
+        email_verify_repo=email_verify_repo,
     )
 
 

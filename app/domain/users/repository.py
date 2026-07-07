@@ -117,6 +117,7 @@ class UserRepository:
         password_hash: str | None = None,
         profile_image_url: str | None = None,
         bio: str | None = None,
+        email_verified: bool = False,
     ) -> User:
         user = User(
             email=email,
@@ -126,6 +127,7 @@ class UserRepository:
             password_hash=password_hash,
             profile_image_url=profile_image_url,
             bio=bio,
+            email_verified=email_verified,
         )
         self.session.add(user)
         await self.session.flush()

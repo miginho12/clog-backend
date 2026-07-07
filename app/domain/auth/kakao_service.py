@@ -174,6 +174,7 @@ class KakaoOAuthService:
             auth_provider="kakao",
             auth_provider_id=kakao_id,
             profile_image_url=user_info.get_profile_image(),
+            email_verified=True,  # OAuth(카카오)는 이미 이메일 검증됨
         )
         await self.session.commit()
         await self.session.refresh(user)
