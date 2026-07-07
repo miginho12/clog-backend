@@ -96,19 +96,14 @@ async def signup(
 @router.get(
     "/verify",
     summary="이메일 인증",
-    description="인증 메일 토큰으로 이메일 인증. 성공/실패 시 프론트 로그인으로 리다이렉트.",
+    description="인증 메일 토큰으로 이메일 인증. 프론트 /verify 페이지가 호출.",
 )
 async def verify_email(
     token: str, service: AuthServiceDep
-) -> RedirectResponse:
-    """이메일 인증 토큰 처리 → 프론트로 리다이렉트."""
-    _settings = get_settings()
+) -> dict:
+    """이메일 인증 토큰 처리 → JSON 결과 (프론트가 표시)."""
     ok = await service.verify_email(token)
-    result = "success" if ok else "failed"
-    return RedirectResponse(
-        url=f"{_settings.frontend_url}/login?verified={result}",
-        status_code=status.HTTP_302_FOUND,
-    )
+    return {"verified": ok}
 
 
 # ─────────────────────────────────────────
