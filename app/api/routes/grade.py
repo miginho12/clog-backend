@@ -9,12 +9,17 @@
 """
 
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import APIRouter, Query
 
 from app.api.dependencies import CurrentUserDep
 from app.domain.grade.dependencies import GradeServiceDep
-from app.domain.grade.schemas import MeGradeResponse, TimelinePoint
+from app.domain.grade.schemas import (
+    MeGradeResponse,
+    ProfileStats,
+    TimelinePoint,
+)
 
 router = APIRouter(prefix="/me", tags=["grade"])
 
@@ -60,3 +65,21 @@ async def get_my_grade_timeline(
 ) -> list[TimelinePoint]:
     points = await service.compute_grade_timeline(user.id, weeks=weeks)
     return [TimelinePoint(**p) for p in points]
+
+
+# 프로필 통계는 /users prefix (타인 조회 가능, 인증 불필요)
+stats_router = APIRouter(prefix="/users", tags=["grade"])
+
+
+@stats_router.get(
+    "/{user_id}/stats",
+    response_model=ProfileStats,
+    summary="클라이머 프로필 통계",
+    description="완등 수, 현재 실력 지수, 최고 등급(짐 명시). 프로필 표시용.",
+)
+async def get_user_stats(
+    user_id: UUID,
+    service: GradeServiceDep,
+) -> ProfileStats:
+    stats = await service.compute_profile_stats(user_id)
+    return ProfileStats(**stats)

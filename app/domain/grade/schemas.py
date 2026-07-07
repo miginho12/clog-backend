@@ -121,3 +121,14 @@ class TimelinePoint(BaseModel):
     date: str  # YYYY-MM-DD
     score: float
     count: int  # 그 시점 점수에 반영된 기록 수
+
+
+class ProfileStats(BaseModel):
+    """프로필 클라이머 통계."""
+
+    success_count: int  # 총 완등 수
+    total_count: int  # 전체 기록 수
+    current_score: float  # 현재 실력 지수
+    top_grade: str | None = None  # 최고 등급 라벨 (예: "V5" or "보")
+    top_grade_gym: str | None = None  # color 최고등급 기준 짐 (color 일 때만)
+    top_grade_system: str = "v_scale"  # "v_scale" or "color"

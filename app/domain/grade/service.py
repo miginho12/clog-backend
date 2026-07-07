@@ -189,6 +189,43 @@ class GradeService:
             )
         return points
 
+    async def compute_profile_stats(self, user_id: UUID) -> dict:
+        """프로필용 클라이머 통계 요약.
+
+        - success_count: 총 완등 수
+        - total_count: 전체 기록 수 (완등+시도)
+        - current_score: 현재 실력 지수 (통합 종합 점수, 반감기 반영)
+        - top_grade: 최고 등급 라벨 (v_scale 우선, 없으면 color)
+        반환: {success_count, total_count, current_score, top_grade}
+        """
+        success_count = await self.repo.count_success(user_id)
+        total_count = await self.repo.count_total(user_id)
+
+        # 현재 실력 지수 = timeline 최근값 (없으면 0)
+        timeline = await self.compute_grade_timeline(user_id, weeks=1)
+        current_score = timeline[-1]["score"] if timeline else 0.0
+
+        # 최고 등급: v_scale 우선(표준, 짐 무관), 없으면 color(짐 기준 명시)
+        # color 는 짐마다 색 난이도가 달라 반드시 기준 짐을 함께 표시해야 함
+        v_grade = await self.compute_v_scale_grade(user_id)
+        top_grade = v_grade.top_rating_label  # 예: "V5"
+        top_grade_gym = None  # v_scale 은 짐 무관
+        top_grade_system = "v_scale"
+        if top_grade is None:
+            color_grade = await self.compute_color_grade(user_id)
+            top_grade = color_grade.top_rating_label  # 예: "보"
+            top_grade_gym = color_grade.base_gym  # 예: "서울숲클라이밍"
+            top_grade_system = "color"
+
+        return {
+            "success_count": success_count,
+            "total_count": total_count,
+            "current_score": current_score,
+            "top_grade": top_grade,
+            "top_grade_gym": top_grade_gym,
+            "top_grade_system": top_grade_system,
+        }
+
     async def compute_color_grade(
         self, user_id: UUID, base_gym: str | None = None
     ) -> ColorGrade:

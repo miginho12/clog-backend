@@ -111,6 +111,7 @@ def create_app() -> FastAPI:
     app.include_router(users.router)
     app.include_router(climbing.router)
     app.include_router(grade.router)
+    app.include_router(grade.stats_router)
     app.include_router(gym_grade_systems.router)
     app.include_router(media.router)
     app.include_router(likes.router)

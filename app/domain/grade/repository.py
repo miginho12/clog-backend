@@ -8,7 +8,7 @@
 from collections.abc import Iterable
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.climbing.models import ClimbingLog
@@ -116,6 +116,31 @@ class GradeRepository:
             )
         )
         return list(result.scalars().all())
+
+    async def count_success(self, user_id: UUID) -> int:
+        """유저의 완등(is_success=True) 기록 수. 프로필 통계용."""
+        result = await self.session.execute(
+            select(func.count())
+            .select_from(ClimbingLog)
+            .where(
+                ClimbingLog.user_id == user_id,
+                ClimbingLog.is_success.is_(True),
+                ClimbingLog.deleted_at.is_(None),
+            )
+        )
+        return int(result.scalar_one())
+
+    async def count_total(self, user_id: UUID) -> int:
+        """유저의 전체 기록 수 (완등+시도). 프로필 통계용."""
+        result = await self.session.execute(
+            select(func.count())
+            .select_from(ClimbingLog)
+            .where(
+                ClimbingLog.user_id == user_id,
+                ClimbingLog.deleted_at.is_(None),
+            )
+        )
+        return int(result.scalar_one())
 
     # ── 색 ↔ rank ↔ ratio 변환 (핵심 헬퍼) ──
 
