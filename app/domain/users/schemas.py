@@ -42,6 +42,7 @@ class UserPublicResponse(UserBase):
     nickname: str
     profile_image_url: str | None = None
     bio: str | None = None
+    is_banned: bool = False  # admin 차단 UI 용
     created_at: datetime
 
 class UserCreate(BaseModel):

@@ -54,3 +54,4 @@ jwt-keys/
 *.key
 jwt-keys/
 .env.example
+__pycache__/
