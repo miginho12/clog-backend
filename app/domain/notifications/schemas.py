@@ -17,7 +17,7 @@ class NotificationResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: UUID
     type: str
-    climbing_log_id: UUID
+    climbing_log_id: UUID | None = None  # follow 알림은 게시물이 없다
     comment_id: UUID | None = None
     is_read: bool
     created_at: datetime

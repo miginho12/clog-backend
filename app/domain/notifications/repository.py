@@ -93,3 +93,21 @@ class NotificationRepository:
         result = await self.session.execute(stmt)
         for n in result.scalars().all():
             await self.session.delete(n)
+
+    async def delete_follow(
+        self, *, actor_id: UUID, recipient_id: UUID
+    ) -> None:
+        """언팔로우 시 팔로우 알림 제거.
+
+        팔로우 알림은 climbing_log_id 가 NULL 이라 타겟으로 특정할 수 없다.
+        recipient 를 반드시 조건에 넣어야 다른 사람에게 보낸 알림까지
+        지우는 사고를 막는다.
+        """
+        stmt = select(Notification).where(
+            Notification.actor_id == actor_id,
+            Notification.recipient_id == recipient_id,
+            Notification.type == "follow",
+        )
+        result = await self.session.execute(stmt)
+        for n in result.scalars().all():
+            await self.session.delete(n)

@@ -75,6 +75,14 @@ class NotificationService:
             climbing_log_id=climbing_log_id,
         )
 
+    async def remove_follow(
+        self, *, actor_id: UUID, recipient_id: UUID
+    ) -> None:
+        """언팔로우 시 팔로우 알림 삭제 (좋아요 취소와 대칭)."""
+        await self.repo.delete_follow(
+            actor_id=actor_id, recipient_id=recipient_id
+        )
+
     async def notify_post_comment(
         self,
         *,

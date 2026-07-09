@@ -68,6 +68,10 @@ class FollowService:
         await self.repo.remove(
             follower_id=follower_id, following_id=following_id
         )
+        # 좋아요 취소와 대칭: 팔로우 알림도 함께 제거 (재팔로우 시 중복 누적 방지)
+        await self.notification_service.remove_follow(
+            actor_id=follower_id, recipient_id=following_id
+        )
         await self.session.commit()
         logger.info(
             "follow_removed",
