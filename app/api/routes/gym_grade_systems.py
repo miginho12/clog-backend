@@ -41,6 +41,8 @@ async def create_gym_system(
         gym_name=payload.gym_name,
         color_order=payload.color_order,
         user_id=user.id,
+        is_admin=user.is_admin,
+        is_official=payload.is_official,
     )
     return GymGradeSystemResponse.model_validate(system)
 
@@ -85,6 +87,7 @@ async def update_gym_system(
         system_id=system_id,
         color_order=payload.color_order,
         user_id=user.id,
+        is_admin=user.is_admin,
     )
     return GymGradeSystemResponse.model_validate(system)
 
@@ -99,4 +102,6 @@ async def delete_gym_system(
     user: CurrentUserDep,
     service: GradeServiceDep,
 ) -> None:
-    await service.delete_gym_system(system_id=system_id, user_id=user.id)
+    await service.delete_gym_system(
+        system_id=system_id, user_id=user.id, is_admin=user.is_admin
+    )

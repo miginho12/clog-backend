@@ -26,6 +26,7 @@ class UserResponse(UserBase):
     bio: str | None = None
     auth_provider: str
     is_public: bool  # ⭐ Day 14
+    is_admin: bool  # ⭐ admin (프론트 가드/버튼 노출용)
     created_at: datetime
     updated_at: datetime
 
@@ -63,3 +64,12 @@ class UserUpdate(UserBase):
     bio: str | None = Field(default=None, max_length=500)
     profile_image_url: str | None = Field(default=None, max_length=2048)
     is_public: bool | None = None  # ⭐ Day 14
+
+
+class AdminBanResponse(BaseModel):
+    """admin 차단/해제 응답."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    user_id: UUID = Field(validation_alias="id")
+    is_banned: bool

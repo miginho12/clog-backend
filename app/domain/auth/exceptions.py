@@ -144,3 +144,15 @@ class LocalLoginNotAvailable(AuthDomainError):
     """
 
     pass
+
+
+class AccountBanned(AuthDomainError):
+    """차단된 계정으로 로그인 시도.
+
+    admin 이 is_banned=True 로 지정한 계정. local/kakao/refresh 모든
+    인증 경로에서 토큰 발급을 거부한다 (403).
+    """
+
+    def __init__(self, user_id: str):
+        self.user_id = user_id
+        super().__init__(f"account is banned: {user_id}")

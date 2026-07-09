@@ -168,4 +168,6 @@ async def delete_climbing_log(
     user: CurrentUserDep,
     service: ClimbingServiceDep,
 ) -> None:
-    await service.delete_log(log_id=log_id, user_id=user.id)
+    await service.delete_log(
+        log_id=log_id, user_id=user.id, is_admin=user.is_admin
+    )

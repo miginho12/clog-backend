@@ -195,16 +195,22 @@ class CommentService:
         return comment
 
     async def delete_comment(
-        self, *, comment_id: UUID, user_id: UUID
+        self, *, comment_id: UUID, user_id: UUID, is_admin: bool = False
     ) -> None:
         comment = await self.repo.get_by_id(comment_id)
         if comment is None:
             raise CommentNotFound(str(comment_id))
-        if comment.user_id != user_id:
+        # 본인 댓글이 아니면 admin 만 삭제 가능 (신고 처리 등)
+        if comment.user_id != user_id and not is_admin:
             raise CommentForbidden(str(comment_id))
         await self.repo.soft_delete(comment)
         await self.session.commit()
-        logger.info("comment_deleted", comment_id=str(comment_id))
+        logger.info(
+            "comment_deleted",
+            comment_id=str(comment_id),
+            actor_id=str(user_id),
+            admin_override=is_admin and comment.user_id != user_id,
+        )
 
     async def set_pin(
         self, *, comment_id: UUID, user_id: UUID, pinned: bool

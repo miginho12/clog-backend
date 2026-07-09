@@ -146,3 +146,8 @@ class UserRepository:
         user.deleted_at = datetime.now(UTC)
         await self.session.flush()
         return user
+
+    async def set_banned(self, user: User, banned: bool) -> User:
+        user.is_banned = banned
+        await self.session.flush()
+        return user

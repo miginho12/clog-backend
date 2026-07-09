@@ -305,20 +305,32 @@ class GradeService:
         return system
 
     async def create_gym_system(
-        self, *, gym_name: str, color_order: list[str], user_id: UUID
+        self,
+        *,
+        gym_name: str,
+        color_order: list[str],
+        user_id: UUID,
+        is_admin: bool = False,
+        is_official: bool = False,
     ) -> GymGradeSystem:
-        """짐 색체계 등록. 사용자 등록(is_official=False, created_by=user).
+        """짐 색체계 등록.
+
+        일반 사용자: is_official=False, created_by=user (개인 등록).
+        admin: is_official 을 지정 가능 (공식 암장 등록). created_by 는
+        감사용으로 등록한 admin id 를 남긴다 (시드는 NULL).
 
         gym_name 중복이면 GymGradeSystemAlreadyExists(409).
         """
         existing = await self.repo.get_by_gym_name(gym_name)
         if existing is not None:
             raise GymGradeSystemAlreadyExists(gym_name)
+        # 공식 등록은 admin 만 — 비admin 이 is_official=True 보내도 무시
+        official = is_official and is_admin
         system = await self.repo.create(
             gym_name=gym_name,
             color_order=color_order,
             created_by=user_id,
-            is_official=False,
+            is_official=official,
         )
         await self.session.commit()
         await self.session.refresh(system)  # commit 후 expire 방지 (응답 직렬화용)
@@ -326,25 +338,42 @@ class GradeService:
 
 
     async def update_gym_system(
-        self, *, system_id: UUID, color_order: list[str], user_id: UUID
+        self,
+        *,
+        system_id: UUID,
+        color_order: list[str],
+        user_id: UUID,
+        is_admin: bool = False,
     ) -> GymGradeSystem:
-        """color_order 수정. 본인 등록분(비공식)만 (아니면 403)."""
+        """color_order 수정.
+
+        일반 사용자: 본인 등록분(비공식)만. admin: 공식·타인 등록분 포함 전체.
+        """
         system = await self.repo.get_by_id(system_id)
         if system is None:
             raise GymGradeSystemNotFoundById(str(system_id))
-        if system.is_official or system.created_by != user_id:
+        if not is_admin and (
+            system.is_official or system.created_by != user_id
+        ):
             raise GymGradeSystemForbidden(str(system_id))
         updated = await self.repo.update_color_order(system, color_order)
         await self.session.commit()
         await self.session.refresh(updated)  # commit 후 expire 방지 (응답 직렬화용)
         return updated
 
-    async def delete_gym_system(self, *, system_id: UUID, user_id: UUID) -> None:
-        """삭제. 본인 등록분(비공식)만 (아니면 403)."""
+    async def delete_gym_system(
+        self, *, system_id: UUID, user_id: UUID, is_admin: bool = False
+    ) -> None:
+        """삭제.
+
+        일반 사용자: 본인 등록분(비공식)만. admin: 공식·타인 등록분 포함 전체.
+        """
         system = await self.repo.get_by_id(system_id)
         if system is None:
             raise GymGradeSystemNotFoundById(str(system_id))
-        if system.is_official or system.created_by != user_id:
+        if not is_admin and (
+            system.is_official or system.created_by != user_id
+        ):
             raise GymGradeSystemForbidden(str(system_id))
         await self.repo.delete(system)
         await self.session.commit()

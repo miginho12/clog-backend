@@ -72,3 +72,16 @@ class UserUpdateForbidden(UserDomainError):
         super().__init__(
             f"cannot update user {user_id} as {current_user_id}"
         )
+
+
+# ─────────────────────────────────────────
+#  admin Step 3 ⭐ 추가: 차단
+# ─────────────────────────────────────────
+
+
+class CannotBanSelf(UserDomainError):
+    """admin 이 자기 자신을 차단 시도 (락아웃 방지)."""
+
+    def __init__(self, user_id: str):
+        self.user_id = user_id
+        super().__init__(f"cannot ban yourself: {user_id}")

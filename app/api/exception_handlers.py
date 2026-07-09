@@ -6,6 +6,7 @@ from slowapi.errors import RateLimitExceeded
 
 from app.core.logging import get_logger
 from app.domain.auth.exceptions import (
+    AccountBanned,
     EmailAlreadyRegistered,
     EmailNotVerified,
     InvalidCredentials,
@@ -44,6 +45,7 @@ from app.domain.grade.exceptions import (
 from app.domain.likes.exceptions import LikeTargetNotFound
 from app.domain.media.service import MediaError
 from app.domain.users.exceptions import (
+    CannotBanSelf,
     EmailAlreadyExists,
     NicknameAlreadyExists,
     OAuthIdentityAlreadyExists,
@@ -290,6 +292,26 @@ async def local_login_not_available_handler(
     )
 
 
+async def account_banned_handler(
+    request: Request, exc: AccountBanned
+) -> JSONResponse:
+    return _error_response(
+        status_code=status.HTTP_403_FORBIDDEN,
+        code="account_banned",
+        message="차단된 계정입니다. 관리자에게 문의하세요",
+    )
+
+
+async def cannot_ban_self_handler(
+    request: Request, exc: CannotBanSelf
+) -> JSONResponse:
+    return _error_response(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        code="cannot_ban_self",
+        message="자기 자신은 차단할 수 없습니다",
+    )
+
+
 async def climbing_log_not_found_handler(
     request: Request, exc: ClimbingLogNotFound
 ) -> JSONResponse:
@@ -417,6 +439,8 @@ def register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(NicknameAlreadyTaken, nickname_already_taken_handler)
     app.add_exception_handler(LocalLoginNotAvailable, local_login_not_available_handler)
     app.add_exception_handler(EmailNotVerified, email_not_verified_handler)
+    app.add_exception_handler(AccountBanned, account_banned_handler)
+    app.add_exception_handler(CannotBanSelf, cannot_ban_self_handler)
     app.add_exception_handler(ClimbingLogNotFound, climbing_log_not_found_handler)
     app.add_exception_handler(ClimbingLogForbidden, climbing_log_forbidden_handler)
     app.add_exception_handler(LikeTargetNotFound, like_target_not_found_handler)

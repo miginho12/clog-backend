@@ -73,6 +73,10 @@ class GymGradeSystemCreate(BaseModel):
         examples=[["흰", "노", "주", "초", "파", "빨", "보", "검"]],
         description="쉬운→어려운 순 색 이름 배열 (인덱스 = rank)",
     )
+    is_official: bool = Field(
+        default=False,
+        description="공식 암장 여부 — admin 만 True 로 등록 가능 (일반 사용자는 무시)",
+    )
 
     @field_validator("gym_name")
     @classmethod

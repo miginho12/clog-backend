@@ -14,6 +14,7 @@ from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.core.security import TokenPair, create_token_pair
 from app.domain.auth.exceptions import (
+    AccountBanned,
     KakaoEmailNotAvailable,
     OAuthStateInvalid,
 )
@@ -95,6 +96,11 @@ class KakaoOAuthService:
 
         # 4. User 자동 생성/조회
         user, is_new = await self._get_or_create_user(user_info)
+
+        # 차단된 계정 → 카카오 재로그인도 거부
+        if user.is_banned:
+            logger.warning("kakao_login_blocked_banned", user_id=str(user.id))
+            raise AccountBanned(str(user.id))
 
         # 5. 우리 시스템 JWT 발급
         pair, refresh_jti = create_token_pair(user.id)

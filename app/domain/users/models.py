@@ -134,6 +134,15 @@ class User(Base):
         comment="관리자 여부 (admin 가드용)",
     )
 
+    # ── 차단 (admin Step 3 ⭐) ──
+    is_banned: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false"),
+        comment="차단 여부 (True 면 로그인·활동 차단)",
+    )
+
     # ── 메타 (자동 관리) ──
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

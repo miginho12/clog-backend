@@ -118,4 +118,6 @@ async def delete_comment(
     user: CurrentUserDep,
     service: CommentServiceDep,
 ) -> None:
-    await service.delete_comment(comment_id=comment_id, user_id=user.id)
+    await service.delete_comment(
+        comment_id=comment_id, user_id=user.id, is_admin=user.is_admin
+    )

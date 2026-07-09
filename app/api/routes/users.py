@@ -4,11 +4,16 @@ from uuid import UUID
 
 from fastapi import APIRouter, Request
 
-from app.api.dependencies import CurrentUserDep
+from app.api.dependencies import AdminUserDep, CurrentUserDep
 from app.core.rate_limit import RateLimits, limiter
 from app.domain.users.dependencies import UserServiceDep
 from app.domain.users.exceptions import UserUpdateForbidden
-from app.domain.users.schemas import UserPublicResponse, UserResponse, UserUpdate
+from app.domain.users.schemas import (
+    AdminBanResponse,
+    UserPublicResponse,
+    UserResponse,
+    UserUpdate,
+)
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -75,3 +80,37 @@ async def update_user(
         )
     updated = await service.update_user(user_id=user_id, payload=payload)
     return UserResponse.model_validate(updated)
+
+
+# ── admin: 사용자 차단 (Step 3) ──
+
+@router.post(
+    "/{user_id}/ban",
+    response_model=AdminBanResponse,
+    summary="사용자 차단 (admin)",
+)
+async def ban_user(
+    user_id: UUID,
+    admin: AdminUserDep,
+    service: UserServiceDep,
+) -> AdminBanResponse:
+    user = await service.set_ban(
+        user_id=user_id, banned=True, actor_id=admin.id
+    )
+    return AdminBanResponse.model_validate(user)
+
+
+@router.delete(
+    "/{user_id}/ban",
+    response_model=AdminBanResponse,
+    summary="사용자 차단 해제 (admin)",
+)
+async def unban_user(
+    user_id: UUID,
+    admin: AdminUserDep,
+    service: UserServiceDep,
+) -> AdminBanResponse:
+    user = await service.set_ban(
+        user_id=user_id, banned=False, actor_id=admin.id
+    )
+    return AdminBanResponse.model_validate(user)

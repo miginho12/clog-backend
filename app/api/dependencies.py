@@ -96,6 +96,14 @@ async def get_current_user(
             detail="user not found",
         )
 
+    # 차단된 사용자 → 모든 인증 요청 거부 (활동 차단)
+    if user.is_banned:
+        logger.warning("auth_blocked_banned_user", user_id=str(user_id))
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="account is banned",
+        )
+
     return user
 
 

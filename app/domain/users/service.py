@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
 from app.domain.users.exceptions import (
+    CannotBanSelf,
     EmailAlreadyExists,
     NicknameAlreadyExists,
     OAuthIdentityAlreadyExists,
@@ -176,7 +177,31 @@ class UserService:
 
         logger.info("user_deleted", user_id=str(user_id))
 
-    # ── Day 14 권한 ──
+    # ── admin Step 3: 차단 ──
+
+    async def set_ban(
+        self, *, user_id: UUID, banned: bool, actor_id: UUID
+    ) -> User:
+        """사용자 차단/차단해제 (admin 전용).
+
+        Raises:
+            CannotBanSelf: 자기 자신 차단 시도 (락아웃 방지)
+            UserNotFound: 대상 없음/삭제됨
+        """
+        if banned and user_id == actor_id:
+            raise CannotBanSelf(str(user_id))
+
+        user = await self.get_user(user_id)  # UserNotFound 자동
+        await self.repository.set_banned(user, banned)
+        await self.session.commit()
+        await self.session.refresh(user)
+        logger.info(
+            "user_ban_changed",
+            user_id=str(user_id),
+            banned=banned,
+            actor_id=str(actor_id),
+        )
+        return user
 
     async def get_user_for_viewer(
         self, target_user_id: UUID, viewer_user_id: UUID

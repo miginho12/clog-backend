@@ -32,6 +32,7 @@ from app.core.security import (
 )
 from app.domain.auth.email_verify_repository import EmailVerifyRepository
 from app.domain.auth.exceptions import (
+    AccountBanned,
     EmailAlreadyRegistered,
     EmailNotVerified,
     InvalidCredentials,
@@ -201,6 +202,11 @@ class AuthService:
             logger.info("local_login_failed_unverified", email=email)
             raise EmailNotVerified(email)
 
+        # 차단된 계정 → 로그인 거부
+        if user.is_banned:
+            logger.warning("local_login_blocked_banned", user_id=str(user.id))
+            raise AccountBanned(str(user.id))
+
         pair = await self._issue_token_pair(user.id)
         logger.info("local_login_success", user_id=str(user.id))
         return pair, user
@@ -237,6 +243,10 @@ class AuthService:
             logger.warning("login_failed_user_not_found", user_id=str(user_id))
             raise UserNotFoundForAuth(f"user not found: {user_id}")
 
+        if user.is_banned:
+            logger.warning("login_blocked_banned", user_id=str(user.id))
+            raise AccountBanned(str(user.id))
+
         pair = await self._issue_token_pair(user.id)
         logger.info("user_login_success", user_id=str(user.id))
         return pair
@@ -265,6 +275,12 @@ class AuthService:
                 stored_user=entry.user_id,
             )
             raise InvalidCredentials("token user mismatch")
+
+        # 차단된 계정 → 갱신 거부 (이미 발급된 토큰도 무력화)
+        user = await self.user_repo.get_by_id_active(UUID(payload.sub))
+        if user is None or user.is_banned:
+            logger.warning("refresh_blocked_banned_or_missing", user_id=payload.sub)
+            raise InvalidCredentials("account unavailable")
 
         new_access = create_access_token(payload.sub)
         logger.info("access_token_refreshed", user_id=payload.sub)

@@ -185,15 +185,23 @@ class ClimbingService:
         logger.info("climbing_log_updated", log_id=str(log_id))
         return log
 
-    # ── 삭제 (본인만) ──
+    # ── 삭제 (본인 또는 admin) ──
 
-    async def delete_log(self, *, log_id: UUID, user_id: UUID) -> None:
+    async def delete_log(
+        self, *, log_id: UUID, user_id: UUID, is_admin: bool = False
+    ) -> None:
         log = await self.repo.get_by_id(log_id)
         if log is None:
             raise ClimbingLogNotFound(str(log_id))
-        if log.user_id != user_id:
+        # 본인 글이 아니면 admin 만 삭제 가능 (신고 처리 등)
+        if log.user_id != user_id and not is_admin:
             raise ClimbingLogForbidden(str(log_id))
 
         await self.repo.soft_delete(log)
         await self.session.commit()
-        logger.info("climbing_log_deleted", log_id=str(log_id))
+        logger.info(
+            "climbing_log_deleted",
+            log_id=str(log_id),
+            actor_id=str(user_id),
+            admin_override=is_admin and log.user_id != user_id,
+        )
