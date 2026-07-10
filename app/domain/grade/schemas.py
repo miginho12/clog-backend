@@ -33,6 +33,9 @@ class ColorGrade(BaseModel):
     base_gym: str | None
     top_rating_label: str | None
     counted_logs: int
+    # 다음 등급 도전 진척도 (ADR-050). 점수와 달리 '깰 수 있는가' 를 잰다.
+    next_grade_label: str | None = None
+    readiness_pct: float | None = None
 
 
 class MeGradeResponse(BaseModel):

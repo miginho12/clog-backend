@@ -10,6 +10,7 @@ from datetime import date, timedelta
 from app.domain.grade.service import (
     aggregate_score,
     color_difficulty,
+    compute_readiness,
     v_scale_difficulty,
 )
 
@@ -95,6 +96,36 @@ def main() -> int:
     old = [("갈", True, 3, TODAY - timedelta(days=365))] * 4
     check("1년 전 기록은 크게 감쇠", score(old) < s_base * 0.05,
           f"잔존 {score(old)/s_base*100:.1f}%")
+
+    print("\n[다음 등급 진척도 (ADR-050)]")
+    # 서울숲 10색: 갈=rank7(0.778), 검=rank8(0.889)
+    gal_r, geom_r = 7 / 9, 8 / 9
+
+    def ready(n, days=0, attempts=3):
+        logs = [(attempts, TODAY - timedelta(days=days))] * n
+        return compute_readiness(
+            top_ratio=gal_r, top_grade_logs=logs,
+            next_ratio=geom_r, today=TODAY,
+        )
+
+    r7 = ready(7)
+    check("갈색 7개 = 100% (검정 1개 ≈ 갈색 7개)",
+          abs(r7 - 100.0) < 1.0, f"{r7:.1f}%")
+    r4 = ready(4)
+    check("갈색 4개 ≈ 57%", 55 <= r4 <= 58, f"{r4:.1f}%")
+    check("100% 를 넘지 않는다 (캡)", ready(20) == 100.0)
+    check("트라이 수가 진척도를 안 바꾼다 (점수와 분리)",
+          abs(ready(4, attempts=2) - ready(4, attempts=34)) < 1e-9)
+    r_old = ready(7, days=365)
+    check("1년 전 기록은 감쇠", r_old < 5.0, f"{r_old:.1f}%")
+
+    check("완등 0건이면 None",
+          compute_readiness(top_ratio=gal_r, top_grade_logs=[],
+                            next_ratio=geom_r, today=TODAY) is None)
+    check("최상위 색이면 None (다음 등급 없음)",
+          compute_readiness(top_ratio=1.0,
+                            top_grade_logs=[(3, TODAY)],
+                            next_ratio=None, today=TODAY) is None)
 
     total, passed = len(_results), sum(_results)
     print(f"\n{'─' * 44}")

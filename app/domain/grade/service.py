@@ -136,6 +136,49 @@ def display_score(raw: float) -> float:
     return math.log(raw + 1) * DISPLAY_SCALE if raw > 0 else 0.0
 
 
+def compute_readiness(
+    *,
+    top_ratio: float,
+    top_grade_logs: list[tuple[int, date]],
+    next_ratio: float | None,
+    today: date,
+) -> float | None:
+    """다음 등급 도전 진척도 (ADR-050).
+
+    top_grade_logs: 최고 등급 완등 기록의 (attempts, climbed_at)
+
+    readiness = Σ(최고등급 difficulty × time_weight) / 다음등급 difficulty
+
+    ── 점수와 무엇이 다른가 ──
+    · 점수  : 난이도 × 시간 × 효율 × 성공가중  → '최근 성과의 총량'
+    · 진척도: 난이도 × 시간                    → '이 등급을 다룰 수 있는가'
+
+    efficiency(시도횟수)를 뺀 이유: 34트라이에 겨우 깬 갈색도
+    '갈색을 깼다'는 사실은 같다. 트라이 수는 '얼마나 잘 깼나'이지
+    '깰 수 있나'가 아니다. 이를 넣으면 점수와 정보가 중복된다.
+
+    시간 감쇠는 유지: 1년 전에 깬 갈색으로 '지금 검정 준비됨'이라 할 수 없다.
+
+    최고 등급 완등만 센다: 갈색 1개 + 보라 20개인 사람은
+    검정 준비가 된 것이 아니다 (모든 완등을 세면 65%, 최고만 세면 14%).
+
+    반환: 0~100 (%). 다음 등급이 없으면(최상위 색) None.
+    """
+    if next_ratio is None or not top_grade_logs:
+        return None
+
+    top_difficulty = color_difficulty(top_ratio)
+    next_difficulty = color_difficulty(next_ratio)
+    if next_difficulty <= 0:
+        return None
+
+    accumulated = sum(
+        top_difficulty * (0.5 ** (max(0, (today - climbed).days) / 60))
+        for _, climbed in top_grade_logs
+    )
+    return min(100.0, accumulated / next_difficulty * 100)
+
+
 def aggregate_score(
     *,
     successes: list[tuple[float, int, date]],
@@ -391,6 +434,8 @@ class GradeService:
         failures: list[tuple[float, int, date]] = []
         gym_counter: Counter[str] = Counter()
         success_ratios: list[float] = []
+        # (ratio, attempts, climbed_at) — 진척도용 (ADR-050)
+        success_details: list[tuple[float, int, date]] = []
         for log in logs:
             system = systems.get(log.gym_name) if log.gym_name else None
             if system is None:
@@ -403,6 +448,7 @@ class GradeService:
             if log.is_success:
                 successes.append(entry)
                 success_ratios.append(ratio)
+                success_details.append((ratio, log.attempts, log.climbed_at))
             else:
                 failures.append(entry)
             gym_counter[log.gym_name] += 1
@@ -425,15 +471,40 @@ class GradeService:
                 base_system = systems.get(resolved_base_gym)
 
         top_rating_label: str | None = None
+        next_grade_label: str | None = None
+        readiness_pct: float | None = None
         if success_ratios and base_system is not None:
             top_ratio = max(success_ratios)
             top_rating_label = self.repo.ratio_to_color(base_system, top_ratio)
+
+            # 다음 등급 진척도 (ADR-050)
+            order = base_system.color_order
+            n = len(order)
+            top_rank = order.index(top_rating_label)
+            if top_rank < n - 1:  # 최상위 색이면 다음 등급이 없다
+                next_grade_label = order[top_rank + 1]
+                next_ratio = self.repo.rank_to_ratio(base_system, top_rank + 1)
+                # 최고 등급 완등 기록만 센다 (ADR-050).
+                # 갈색 1개 + 보라 20개인 사람은 검정 준비가 된 것이 아니다.
+                top_logs = [
+                    (att, climbed)
+                    for r, att, climbed in success_details
+                    if abs(r - top_ratio) < 1e-9
+                ]
+                readiness_pct = compute_readiness(
+                    top_ratio=top_ratio,
+                    top_grade_logs=top_logs,
+                    next_ratio=next_ratio,
+                    today=today,
+                )
 
         return ColorGrade(
             comprehensive_score=comprehensive_score,
             base_gym=resolved_base_gym,
             top_rating_label=top_rating_label,
             counted_logs=counted,
+            next_grade_label=next_grade_label,
+            readiness_pct=readiness_pct,
         )
 
     # ── 짐 색체계 CRUD (구현 6) ──
