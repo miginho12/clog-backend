@@ -23,8 +23,26 @@ from app.domain.grade.models import GymGradeSystem
 from app.domain.grade.repository import GradeRepository
 from app.domain.grade.schemas import ColorGrade, VScaleGrade
 
-# 종합점수에 반영할 상위 기록 수 (ADR-042: 상위 N개 가중평균)
+# 종합점수에 반영할 상위 기록 수 (ADR-045: 상위 N개의 합)
 TOP_N = 10
+
+# 난이도 곡률 (ADR-046) — 위로 갈수록 단계 배율이 커진다.
+#   빨(0)→주(1) = 1.5배,  갈(7)→검(8) = 7.0배 (사용자 체감에서 역산)
+# 표본 1명의 체감이므로 완등률 데이터가 쌓이면 재보정할 것.
+CURVE_A = 0.295
+CURVE_B = 0.1101
+# ratio(0~1) 를 가상 rank(0~VIRTUAL_SPAN) 로 환산.
+# 짐마다 색 개수가 달라도 최고색은 항상 동일 난이도가 되도록 정규화 (ADR-041).
+VIRTUAL_SPAN = 9
+
+# 실패 기여도 상한 (ADR-047)
+FAIL_WEIGHT = 0.3
+FAIL_RATIO_CAP = 0.10  # 실패 총합 <= 완등 총합의 10%
+
+# 표시용 로그 변환 계수 (ADR-049).
+# 곡률 지수 난이도로 원시 점수가 1 ~ 106,202 범위라 그대로 노출하면
+# 카드 UI 가 깨지고 사용자가 읽을 수 없다.
+DISPLAY_SCALE = 10.0
 
 # v_scale 표준 표기만 허용 (V + 정수). "V3+", "v3", "보라" 등은 스킵.
 _V_PATTERN = re.compile(r"V(\d+)\Z")
@@ -41,12 +59,42 @@ def parse_v_scale(grade_raw: str) -> int | None:
     return int(m.group(1)) if m else None
 
 
-def color_difficulty(ratio: float) -> float:
-    """color 트랙 difficulty (ADR-041, 확정 (b)).
+# v_scale 정규화 상한 (V0~V17). ratio = v / V_SCALE_MAX
+V_SCALE_MAX = 17
 
-    ratio(0~1) × 10 + 1 → 1~11. v_scale 의 V0=1 보정과 대칭.
+
+def v_scale_difficulty(v: int) -> float:
+    """v_scale 트랙 difficulty (ADR-046: color 와 동일한 곡률 지수).
+
+    선형(v+1)에서 바꾼 이유:
+      · color 트랙만 지수로 두면 두 트랙 스케일이 어긋난다
+        (color 최대 106,202 vs v_scale 최대 18).
+        compute_grade_timeline 이 둘을 합치므로 색 기록 하나가
+        V17 완등 수백 개를 압도해버린다.
+      · V4→V5 보다 V14→V15 가 훨씬 어렵다는 사실은 색과 동일하다.
+
+    v / V_SCALE_MAX 로 정규화하여 color 의 ratio 와 같은 축에 둔다.
     """
-    return ratio * 10 + 1
+    ratio = min(1.0, max(0.0, v / V_SCALE_MAX))
+    vr = ratio * VIRTUAL_SPAN
+    return math.exp(CURVE_A * vr + CURVE_B * vr * vr)
+
+
+def color_difficulty(ratio: float) -> float:
+    """color 트랙 difficulty (ADR-046: 곡률 지수).
+
+    difficulty = exp(a·vr + b·vr²),  vr = ratio × VIRTUAL_SPAN
+
+    선형(ratio*10+1)에서 바꾼 이유:
+      · 합(sum) 집계로 전환하니 '쉬운 문제를 많이 푼 쪽'이 이겼다
+        (V9 3개=27.0 < V4 10개=40.0). 선형은 개수를 못 이긴다.
+      · 실제 클라이밍은 한 단계 오를수록 훨씬 어렵다.
+        곡률(b>0)이 있으면 초보 구간은 완만(1.5배), 상급은 가파르다(7~9배).
+
+    ratio 로 정규화하므로 색 개수가 다른 짐끼리도 최고색이 같은 값이 된다.
+    """
+    vr = ratio * VIRTUAL_SPAN
+    return math.exp(CURVE_A * vr + CURVE_B * vr * vr)
 
 
 def compute_contribution(
@@ -72,6 +120,91 @@ def compute_contribution(
     return difficulty * success_weight * time_weight * efficiency
 
 
+def display_score(raw: float) -> float:
+    """원시 점수 → 표시용 점수 (ADR-049).
+
+    display = ln(raw + 1) × DISPLAY_SCALE
+
+    원시 점수는 곡률 지수 난이도 때문에 1 ~ 106,202 범위를 갖는다.
+    로그를 취하면 입문 8.9 ~ 엘리트 119 로 읽기 좋은 구간이 되고,
+    클라이밍 그레이드 자체가 로그 스케일이므로 감각과도 일치한다.
+
+    단조증가하므로 순위는 보존된다. 다만 raw 차이가 압축되므로
+    (검정3개/갈색4개 = raw 6.6배 → 표시 1.2배) 정밀 비교가 필요한
+    리더보드에서는 raw 를 쓸 것.
+    """
+    return math.log(raw + 1) * DISPLAY_SCALE if raw > 0 else 0.0
+
+
+def aggregate_score(
+    *,
+    successes: list[tuple[float, int, date]],
+    failures: list[tuple[float, int, date]],
+    today: date,
+) -> tuple[float, int]:
+    """종합점수 집계 (ADR-045, ADR-047).
+
+    successes/failures: (difficulty, attempts, climbed_at) 튜플 리스트
+
+    반환: (comprehensive_score, counted_logs)
+
+    ── 왜 평균이 아니라 합인가 (ADR-045) ──
+    평균이면 쉬운 문제나 실패를 기록할수록 점수가 떨어진다.
+    실제 데이터로 검증: 빨강 완등 3개 추가 → 2.86→2.24(-21.7%),
+    실패 2건 삭제 → 2.86→3.09(+7.9%). 기록 앱이 기록을 억제하고
+    실패를 숨기는 것이 이득이 된다. top-N 을 자르는 것 자체가 상한이므로
+    합으로 두어도 무한히 오르지 않는다.
+
+    ── 실패 이중 상한 (ADR-047) ──
+    곡률 지수 난이도(ADR-046)를 도입하는 순간 악용이 생긴다.
+    핑크/갈색 난이도 비가 61배인데 실패 페널티는 3.3분의 1뿐이라,
+    "최고난도에 매달렸다 떨어지기"만 반복하는 것이 최적 전략이 된다
+    (아무것도 못 깬 사람이 갈색 완등자의 38.5배 점수).
+
+      상한1: 개별 실패 <= 자기 최고 완등 난이도 기준 기여도
+             → 완등이 없으면 실패 기여도는 0
+      상한2: 실패 총합 <= 완등 총합 × 10%
+             → 실패를 양산해도 이득이 없다 (1회든 6회든 동일)
+    """
+    succ_contrib = [
+        compute_contribution(
+            difficulty=d,
+            is_success=True,
+            attempts=a,
+            climbed_at=c,
+            today=today,
+        )
+        for d, a, c in successes
+    ]
+    succ_top = sorted(succ_contrib, reverse=True)[:TOP_N]
+    succ_sum = sum(succ_top)
+
+    if not successes:
+        # 상한1: 완등 기록이 없으면 실패 기여도도 0
+        return 0.0, 0
+
+    cap_difficulty = max(d for d, _, _ in successes)
+    fail_contrib: list[float] = []
+    for d, a, c in failures:
+        raw = compute_contribution(
+            difficulty=d, is_success=False, attempts=a, climbed_at=c, today=today
+        )
+        capped = compute_contribution(
+            difficulty=cap_difficulty,
+            is_success=False,
+            attempts=a,
+            climbed_at=c,
+            today=today,
+        )
+        fail_contrib.append(min(raw, capped))
+
+    # 상한2: 실패 총합은 완등 총합의 일정 비율을 넘지 못한다
+    fail_sum = min(sum(fail_contrib), succ_sum * FAIL_RATIO_CAP)
+
+    counted = len(succ_top) + min(len(fail_contrib), TOP_N)
+    return succ_sum + fail_sum, counted
+
+
 class GradeService:
     def __init__(self, repo: GradeRepository, session=None):
         self.repo = repo
@@ -84,26 +217,24 @@ class GradeService:
         logs = await self.repo.list_user_logs_for_grading(user_id, "v_scale")
         today = datetime.now(UTC).date()
 
-        contributions: list[float] = []
+        successes: list[tuple[float, int, date]] = []
+        failures: list[tuple[float, int, date]] = []
         success_v: list[int] = []
         for log in logs:
             v = parse_v_scale(log.grade_raw)
             if v is None:
                 continue
-            contributions.append(
-                compute_contribution(
-                    difficulty=v + 1,
-                    is_success=log.is_success,
-                    attempts=log.attempts,
-                    climbed_at=log.climbed_at,
-                    today=today,
-                )
-            )
+            entry = (v_scale_difficulty(v), log.attempts, log.climbed_at)
             if log.is_success:
+                successes.append(entry)
                 success_v.append(v)
+            else:
+                failures.append(entry)
 
-        top = sorted(contributions, reverse=True)[:TOP_N]
-        comprehensive_score = sum(top) / len(top) if top else 0.0
+        raw_score, counted = aggregate_score(
+            successes=successes, failures=failures, today=today
+        )
+        comprehensive_score = display_score(raw_score)
 
         top_rating = max(success_v) if success_v else None
         top_rating_label = f"V{top_rating}" if top_rating is not None else None
@@ -112,7 +243,7 @@ class GradeService:
             comprehensive_score=comprehensive_score,
             top_rating=top_rating,
             top_rating_label=top_rating_label,
-            counted_logs=len(top),
+            counted_logs=counted,
         )
 
     async def compute_grade_timeline(
@@ -122,10 +253,15 @@ class GradeService:
 
         v_scale·color 두 트랙 로그를 하나의 난이도 스케일로 합쳐
         각 주말(스냅샷) 시점의 종합 점수를 계산한다.
-        - v_scale: difficulty = v+1 (1~18)
-        - color:   difficulty = ratio*10+1 (1~11, ADR-041 v_scale 과 대칭)
+        - v_scale: v_scale_difficulty(v)   (ADR-046 곡률 지수)
+        - color:   color_difficulty(ratio) (동일 곡률, 같은 축)
         - 각 시점 이후 로그 제외, today=스냅샷일 로 반감기 반영
         → 실력 성장 곡선. 안 오르면 반감기로 서서히 하락.
+
+        두 트랙을 합칠 수 있는 이유(ADR-046): 둘 다 ratio 로 정규화한 뒤
+        같은 곡률 지수를 태우므로 최고 등급이 동일한 값(≈106,202)이 된다.
+        선형 시절에는 v_scale 최대 18 / color 최대 11 로 축이 달랐다.
+
         반환: [{"date", "score", "count"}, ...]
         """
         # (difficulty, climbed_at, is_success, attempts) 로 통일해 미리 파싱
@@ -138,7 +274,12 @@ class GradeService:
             if v is None:
                 continue
             parsed.append(
-                (float(v + 1), log.climbed_at, log.is_success, log.attempts)
+                (
+                    v_scale_difficulty(v),
+                    log.climbed_at,
+                    log.is_success,
+                    log.attempts,
+                )
             )
 
         # 2) color 로그 (짐 색 순서 → ratio → difficulty)
@@ -167,24 +308,28 @@ class GradeService:
         points: list[dict] = []
         for i in range(weeks):
             snapshot = today - timedelta(weeks=(weeks - 1 - i))
-            contributions = [
-                compute_contribution(
-                    difficulty=diff,
-                    is_success=succ,
-                    attempts=att,
-                    climbed_at=climbed,
-                    today=snapshot,
-                )
+
+            # 스냅샷 시점까지의 로그만, 완등/실패를 분리해 공용 집계에 위임
+            successes = [
+                (diff, att, climbed)
                 for (diff, climbed, succ, att) in parsed
-                if climbed <= snapshot
+                if climbed <= snapshot and succ
             ]
-            top = sorted(contributions, reverse=True)[:TOP_N]
-            score = sum(top) / len(top) if top else 0.0
+            failures = [
+                (diff, att, climbed)
+                for (diff, climbed, succ, att) in parsed
+                if climbed <= snapshot and not succ
+            ]
+            raw, counted = aggregate_score(
+                successes=successes, failures=failures, today=snapshot
+            )
+            score = display_score(raw)
+
             points.append(
                 {
                     "date": snapshot.isoformat(),
                     "score": round(score, 2),
-                    "count": len(top),
+                    "count": counted,
                 }
             )
         return points
@@ -242,7 +387,8 @@ class GradeService:
             log.gym_name for log in logs if log.gym_name
         )
 
-        contributions: list[float] = []
+        successes: list[tuple[float, int, date]] = []
+        failures: list[tuple[float, int, date]] = []
         gym_counter: Counter[str] = Counter()
         success_ratios: list[float] = []
         for log in logs:
@@ -253,21 +399,18 @@ class GradeService:
             if rank is None:
                 continue
             ratio = self.repo.rank_to_ratio(system, rank)
-            contributions.append(
-                compute_contribution(
-                    difficulty=color_difficulty(ratio),
-                    is_success=log.is_success,
-                    attempts=log.attempts,
-                    climbed_at=log.climbed_at,
-                    today=today,
-                )
-            )
-            gym_counter[log.gym_name] += 1
+            entry = (color_difficulty(ratio), log.attempts, log.climbed_at)
             if log.is_success:
+                successes.append(entry)
                 success_ratios.append(ratio)
+            else:
+                failures.append(entry)
+            gym_counter[log.gym_name] += 1
 
-        top = sorted(contributions, reverse=True)[:TOP_N]
-        comprehensive_score = sum(top) / len(top) if top else 0.0
+        raw_score, counted = aggregate_score(
+            successes=successes, failures=failures, today=today
+        )
+        comprehensive_score = display_score(raw_score)
 
         if base_gym is not None:
             resolved_base_gym: str | None = base_gym
@@ -290,7 +433,7 @@ class GradeService:
             comprehensive_score=comprehensive_score,
             base_gym=resolved_base_gym,
             top_rating_label=top_rating_label,
-            counted_logs=len(top),
+            counted_logs=counted,
         )
 
     # ── 짐 색체계 CRUD (구현 6) ──
