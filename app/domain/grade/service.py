@@ -263,6 +263,8 @@ class GradeService:
         successes: list[tuple[float, int, date]] = []
         failures: list[tuple[float, int, date]] = []
         success_v: list[int] = []
+        # (v, attempts, climbed_at) — 진척도용 (ADR-050)
+        success_v_details: list[tuple[int, int, date]] = []
         for log in logs:
             v = parse_v_scale(log.grade_raw)
             if v is None:
@@ -271,6 +273,7 @@ class GradeService:
             if log.is_success:
                 successes.append(entry)
                 success_v.append(v)
+                success_v_details.append((v, log.attempts, log.climbed_at))
             else:
                 failures.append(entry)
 
@@ -282,11 +285,29 @@ class GradeService:
         top_rating = max(success_v) if success_v else None
         top_rating_label = f"V{top_rating}" if top_rating is not None else None
 
+        # 다음 등급 진척도 (ADR-050). V17 이 상한이므로 그 이상은 없다.
+        next_grade_label: str | None = None
+        readiness_pct: float | None = None
+        if top_rating is not None and top_rating < V_SCALE_MAX:
+            next_grade_label = f"V{top_rating + 1}"
+            readiness_pct = compute_readiness(
+                top_ratio=top_rating / V_SCALE_MAX,
+                top_grade_logs=[
+                    (att, climbed)
+                    for v, att, climbed in success_v_details
+                    if v == top_rating
+                ],
+                next_ratio=(top_rating + 1) / V_SCALE_MAX,
+                today=today,
+            )
+
         return VScaleGrade(
             comprehensive_score=comprehensive_score,
             top_rating=top_rating,
             top_rating_label=top_rating_label,
             counted_logs=counted,
+            next_grade_label=next_grade_label,
+            readiness_pct=readiness_pct,
         )
 
     async def compute_grade_timeline(

@@ -20,6 +20,9 @@ class VScaleGrade(BaseModel):
     top_rating: int | None
     top_rating_label: str | None
     counted_logs: int
+    # 다음 등급 도전 진척도 (ADR-050)
+    next_grade_label: str | None = None
+    readiness_pct: float | None = None
 
 
 class ColorGrade(BaseModel):
