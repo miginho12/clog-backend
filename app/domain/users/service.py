@@ -14,11 +14,18 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
+from app.core.password import (
+    hash_password,
+    validate_password_policy,
+    verify_password,
+)
 from app.domain.users.exceptions import (
     CannotBanSelf,
+    CurrentPasswordMismatch,
     EmailAlreadyExists,
     NicknameAlreadyExists,
     OAuthIdentityAlreadyExists,
+    PasswordChangeNotAllowed,
     UserAlreadyDeleted,
     UserNotFound,
     UserProfilePrivate,
@@ -176,6 +183,53 @@ class UserService:
         await self.session.commit()
 
         logger.info("user_deleted", user_id=str(user_id))
+
+    # ── 비밀번호 변경 (Day 23 ⭐) ──
+
+    async def change_password(
+        self, *, user_id: UUID, current_password: str, new_password: str
+    ) -> None:
+        """자체(local) 계정 비밀번호 변경.
+
+        Raises:
+            UserNotFound
+            PasswordChangeNotAllowed: OAuth 가입자 (password_hash 없음)
+            CurrentPasswordMismatch: 현재 비밀번호 불일치
+            PasswordPolicyError: 새 비밀번호 정책 위반
+        """
+        user = await self.get_user(user_id)
+
+        if user.auth_provider != "local" or not user.password_hash:
+            raise PasswordChangeNotAllowed(user_id=str(user_id))
+
+        if not verify_password(current_password, user.password_hash):
+            raise CurrentPasswordMismatch(user_id=str(user_id))
+
+        validate_password_policy(new_password)  # 위반 시 PasswordPolicyError
+
+        user.password_hash = hash_password(new_password)
+        await self.session.commit()
+        await self.session.refresh(user)
+
+        logger.info("user_password_changed", user_id=str(user_id))
+
+    # ── 계정 탈퇴 (Day 23 ⭐) ──
+
+    async def deactivate_account(self, user_id: UUID) -> None:
+        """본인 계정 탈퇴 (soft delete + 익명화).
+
+        멱등하지 않음: 이미 삭제된 계정은 UserNotFound 로 처리
+        (get_by_id_active 가 deleted_at IS NULL 만 반환).
+
+        refresh 토큰 무효화는 Redis 라 트랜잭션 밖 → 라우트에서 커밋 후 호출.
+
+        Raises:
+            UserNotFound: 존재 X 또는 이미 탈퇴됨
+        """
+        user = await self.get_user(user_id)  # 활성 사용자만
+        await self.repository.anonymize_and_soft_delete(user)
+        await self.session.commit()
+        logger.info("user_account_deactivated", user_id=str(user_id))
 
     # ── admin Step 3: 차단 ──
 

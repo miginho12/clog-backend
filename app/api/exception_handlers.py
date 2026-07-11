@@ -5,6 +5,7 @@ from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
 
 from app.core.logging import get_logger
+from app.core.password import PasswordPolicyError
 from app.domain.auth.exceptions import (
     AccountBanned,
     EmailAlreadyRegistered,
@@ -46,9 +47,11 @@ from app.domain.likes.exceptions import LikeTargetNotFound
 from app.domain.media.service import MediaError
 from app.domain.users.exceptions import (
     CannotBanSelf,
+    CurrentPasswordMismatch,
     EmailAlreadyExists,
     NicknameAlreadyExists,
     OAuthIdentityAlreadyExists,
+    PasswordChangeNotAllowed,
     UserAlreadyDeleted,
     UserNotFound,
     UserProfilePrivate,  # ⭐ Day 14
@@ -419,6 +422,40 @@ async def follow_target_not_found_handler(
     return _error_response(404, "FOLLOW_TARGET_NOT_FOUND", "팔로우 대상 사용자를 찾을 수 없습니다")
 
 
+async def password_change_not_allowed_handler(
+    request: Request, exc: PasswordChangeNotAllowed
+) -> JSONResponse:
+    logger.info("password_change_not_allowed", user_id=exc.user_id, path=request.url.path)
+    return _error_response(
+        400,
+        "PASSWORD_CHANGE_NOT_ALLOWED",
+        "소셜 로그인 계정은 비밀번호를 변경할 수 없습니다.",
+    )
+
+
+async def current_password_mismatch_handler(
+    request: Request, exc: CurrentPasswordMismatch
+) -> JSONResponse:
+    logger.info("current_password_mismatch", user_id=exc.user_id, path=request.url.path)
+    return _error_response(
+        400,
+        "CURRENT_PASSWORD_MISMATCH",
+        "현재 비밀번호가 일치하지 않습니다.",
+    )
+
+
+async def password_policy_error_handler(
+    request: Request, exc: PasswordPolicyError
+) -> JSONResponse:
+    logger.info("password_policy_error", path=request.url.path)
+    return _error_response(
+        400,
+        "PASSWORD_POLICY_VIOLATION",
+        "; ".join(exc.reasons),
+        reasons=exc.reasons,
+    )
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     # User 도메인
     app.add_exception_handler(EmailAlreadyExists, email_already_exists_handler)
@@ -429,6 +466,9 @@ def register_exception_handlers(app: FastAPI) -> None:
     # ⭐ Day 14
     app.add_exception_handler(UserProfilePrivate, user_profile_private_handler)
     app.add_exception_handler(UserUpdateForbidden, user_update_forbidden_handler)
+    app.add_exception_handler(PasswordChangeNotAllowed, password_change_not_allowed_handler)
+    app.add_exception_handler(CurrentPasswordMismatch, current_password_mismatch_handler)
+    app.add_exception_handler(PasswordPolicyError, password_policy_error_handler)
 
     # Auth 도메인 (Day 11)
     app.add_exception_handler(UserNotFoundForAuth, user_not_found_for_auth_handler)

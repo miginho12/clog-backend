@@ -85,3 +85,24 @@ class CannotBanSelf(UserDomainError):
     def __init__(self, user_id: str):
         self.user_id = user_id
         super().__init__(f"cannot ban yourself: {user_id}")
+
+
+# ─────────────────────────────────────────
+#  Day 23 ⭐ 추가: 비밀번호 변경 / 탈퇴
+# ─────────────────────────────────────────
+
+
+class PasswordChangeNotAllowed(UserDomainError):
+    """OAuth 가입자의 비밀번호 변경 시도 (local 계정만 가능)."""
+
+    def __init__(self, user_id: str):
+        self.user_id = user_id
+        super().__init__(f"password change not allowed for oauth user: {user_id}")
+
+
+class CurrentPasswordMismatch(UserDomainError):
+    """현재 비밀번호 불일치."""
+
+    def __init__(self, user_id: str):
+        self.user_id = user_id
+        super().__init__(f"current password mismatch: {user_id}")

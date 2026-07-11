@@ -147,6 +147,22 @@ class UserRepository:
         await self.session.flush()
         return user
 
+    async def anonymize_and_soft_delete(self, user: User) -> User:
+        """탈퇴 처리: email/nickname 익명화 + soft delete.
+
+        unique 제약(email, nickname)이 걸린 값을 익명 값으로 바꿔
+        같은 이메일/닉네임으로 재가입이 가능하도록 슬롯을 비운다.
+        같은 트랜잭션 안에서 한 번의 flush 로 원자적으로 처리.
+        """
+        from datetime import UTC, datetime
+
+        token = user.id.hex[:12]
+        user.email = f"deleted_{user.id.hex}@deleted.clog"
+        user.nickname = f"deleted_{token}"
+        user.deleted_at = datetime.now(UTC)
+        await self.session.flush()
+        return user
+
     async def set_banned(self, user: User, banned: bool) -> User:
         user.is_banned = banned
         await self.session.flush()

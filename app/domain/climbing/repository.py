@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.domain.climbing.models import ClimbingLog
+from app.domain.users.models import User
 
 
 class ClimbingRepository:
@@ -22,10 +23,12 @@ class ClimbingRepository:
     async def get_by_id(self, log_id: UUID) -> ClimbingLog | None:
         result = await self.session.execute(
             select(ClimbingLog)
+            .join(User, ClimbingLog.user_id == User.id)
             .options(selectinload(ClimbingLog.user))
             .where(
                 ClimbingLog.id == log_id,
                 ClimbingLog.deleted_at.is_(None),
+                User.deleted_at.is_(None),  # 탈퇴 작성자 글 숨김
             )
         )
         return result.scalar_one_or_none()
@@ -82,14 +85,20 @@ class ClimbingRepository:
 
         반환: (items, has_next)
         """
-        stmt = select(ClimbingLog).options(selectinload(ClimbingLog.user)).where(
-            ClimbingLog.deleted_at.is_(None),
-            # 미디어 처리 완료(done) 또는 미디어없음/이미지(null)만 노출.
-            # processing/failed 는 피드·프로필에서 숨김 (압축 완료 후 등장)
-            or_(
-                ClimbingLog.media_status.is_(None),
-                ClimbingLog.media_status == "done",
-            ),
+        stmt = (
+            select(ClimbingLog)
+            .join(User, ClimbingLog.user_id == User.id)
+            .options(selectinload(ClimbingLog.user))
+            .where(
+                ClimbingLog.deleted_at.is_(None),
+                User.deleted_at.is_(None),  # 탈퇴 작성자 글 숨김
+                # 미디어 처리 완료(done) 또는 미디어없음/이미지(null)만 노출.
+                # processing/failed 는 피드·프로필에서 숨김 (압축 완료 후 등장)
+                or_(
+                    ClimbingLog.media_status.is_(None),
+                    ClimbingLog.media_status == "done",
+                ),
+            )
         )
 
         # 공개 범위

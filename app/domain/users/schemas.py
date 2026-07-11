@@ -74,3 +74,13 @@ class AdminBanResponse(BaseModel):
 
     user_id: UUID = Field(validation_alias="id")
     is_banned: bool
+
+
+class PasswordChangeRequest(BaseModel):
+    """비밀번호 변경 요청 (PATCH /users/me/password, local 계정만).
+
+    new_password 정책 검증은 서비스에서 validate_password_policy 로 수행.
+    """
+
+    current_password: str = Field(..., min_length=1, max_length=128)
+    new_password: str = Field(..., min_length=1, max_length=128)

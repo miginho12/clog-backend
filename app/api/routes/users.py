@@ -1,15 +1,19 @@
 """User 엔드포인트 (Day 14 보안 강화)."""
 
+from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request, Response, status
 
 from app.api.dependencies import AdminUserDep, CurrentUserDep
 from app.core.rate_limit import RateLimits, limiter
+from app.domain.auth.dependencies import get_refresh_token_repository
+from app.domain.auth.repository import RedisRefreshTokenRepository
 from app.domain.users.dependencies import UserServiceDep
 from app.domain.users.exceptions import UserUpdateForbidden
 from app.domain.users.schemas import (
     AdminBanResponse,
+    PasswordChangeRequest,
     UserPublicResponse,
     UserResponse,
     UserUpdate,
@@ -36,6 +40,51 @@ async def update_me(
 ) -> UserResponse:
     updated = await service.update_user(user_id=user.id, payload=payload)
     return UserResponse.model_validate(updated)
+
+
+@router.patch(
+    "/me/password",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="비밀번호 변경 (local 계정)",
+)
+@limiter.limit(RateLimits.USERS_UPDATE)
+async def change_my_password(
+    request: Request,
+    payload: PasswordChangeRequest,
+    user: CurrentUserDep,
+    service: UserServiceDep,
+    refresh_repo: Annotated[
+        RedisRefreshTokenRepository, Depends(get_refresh_token_repository)
+    ],
+) -> Response:
+    await service.change_password(
+        user_id=user.id,
+        current_password=payload.current_password,
+        new_password=payload.new_password,
+    )
+    # 보안: 비밀번호 변경 시 전체 refresh 토큰 무효화 (다른 기기 강제 로그아웃)
+    await refresh_repo.revoke_all_for_user(str(user.id))
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.delete(
+    "/me",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="회원 탈퇴 (soft delete)",
+)
+@limiter.limit(RateLimits.USERS_UPDATE)
+async def delete_me(
+    request: Request,
+    user: CurrentUserDep,
+    service: UserServiceDep,
+    refresh_repo: Annotated[
+        RedisRefreshTokenRepository, Depends(get_refresh_token_repository)
+    ],
+) -> Response:
+    await service.deactivate_account(user_id=user.id)
+    # 탈퇴 즉시 전 기기 로그아웃 (refresh 무효화)
+    await refresh_repo.revoke_all_for_user(str(user.id))
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 # ── /users/{user_id} ──
