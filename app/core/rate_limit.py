@@ -89,6 +89,7 @@ class RateLimits:
     # User
     USERS_ME = "100/minute"
     USERS_DETAIL = "60/minute"
+    USERS_SEARCH = "60/minute"
     USERS_UPDATE = "30/minute"
 
     # 기본 (catch-all)

@@ -28,7 +28,6 @@ from app.domain.users.exceptions import (
     PasswordChangeNotAllowed,
     UserAlreadyDeleted,
     UserNotFound,
-    UserProfilePrivate,
 )
 from app.domain.users.models import User
 from app.domain.users.repository import UserRepository
@@ -262,6 +261,22 @@ class UserService:
         )
         return user
 
+    async def search_users(
+        self,
+        *,
+        query: str,
+        viewer_id: UUID | None = None,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> tuple[list[User], bool]:
+        """닉네임으로 사용자 검색 (본인 제외)."""
+        return await self.repository.search_by_nickname(
+            query=query,
+            exclude_user_id=viewer_id,
+            page=page,
+            page_size=page_size,
+        )
+
     async def get_user_for_viewer(
         self, target_user_id: UUID, viewer_user_id: UUID
     ) -> User:
@@ -273,9 +288,7 @@ class UserService:
             UserNotFound
             UserProfilePrivate
         """
-        target = await self.get_user(target_user_id)  # UserNotFound 자동
-        if target.id == viewer_user_id:
-            return target
-        if not target.is_public:
-            raise UserProfilePrivate(user_id=str(target_user_id))
-        return target
+        # 비공개 정책(Day 24): 프로필 메타(닉네임/bio/통계)는 공개하되,
+        # 게시글 노출은 별개(list_feed 가 public 만 반환)로 프론트가 안내.
+        # 따라서 여기선 존재하면 반환. is_public 은 응답에 실어 프론트가 판단.
+        return await self.get_user(target_user_id)  # UserNotFound 자동

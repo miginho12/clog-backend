@@ -3,9 +3,9 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request, Response, status
+from fastapi import APIRouter, Depends, Query, Request, Response, status
 
-from app.api.dependencies import AdminUserDep, CurrentUserDep
+from app.api.dependencies import AdminUserDep, CurrentUserDep, OptionalUserId
 from app.core.rate_limit import RateLimits, limiter
 from app.domain.auth.dependencies import get_refresh_token_repository
 from app.domain.auth.repository import RedisRefreshTokenRepository
@@ -16,6 +16,8 @@ from app.domain.users.schemas import (
     PasswordChangeRequest,
     UserPublicResponse,
     UserResponse,
+    UserSearchItem,
+    UserSearchResponse,
     UserUpdate,
 )
 
@@ -85,6 +87,36 @@ async def delete_me(
     # 탈퇴 즉시 전 기기 로그아웃 (refresh 무효화)
     await refresh_repo.revoke_all_for_user(str(user.id))
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# ── /users/search (반드시 /{user_id} 보다 위) ──
+
+@router.get(
+    "/search",
+    response_model=UserSearchResponse,
+    summary="닉네임으로 사용자 검색",
+)
+@limiter.limit(RateLimits.USERS_SEARCH)
+async def search_users(
+    request: Request,
+    service: UserServiceDep,
+    viewer_id: OptionalUserId,
+    q: str = Query(..., min_length=1, max_length=50, description="닉네임 검색어"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=50),
+) -> UserSearchResponse:
+    users, has_next = await service.search_users(
+        query=q.strip(),
+        viewer_id=viewer_id,
+        page=page,
+        page_size=page_size,
+    )
+    return UserSearchResponse(
+        items=[UserSearchItem.model_validate(u) for u in users],
+        page=page,
+        page_size=page_size,
+        has_next=has_next,
+    )
 
 
 # ── /users/{user_id} ──

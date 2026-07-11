@@ -45,6 +45,48 @@ class UserRepository:
         )
         return result.scalar_one_or_none()
 
+    async def search_by_nickname(
+        self,
+        *,
+        query: str,
+        exclude_user_id: UUID | None = None,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> tuple[list[User], bool]:
+        """닉네임 부분검색 (활성·미차단만). ilike 대소문자 무시.
+
+        반환: (users, has_next). 탈퇴(deleted_at)·차단(is_banned)·본인 제외.
+        정렬: 접두 일치 우선(닉네임이 query 로 시작) → 닉네임 오름차순.
+        """
+        from sqlalchemy import case
+
+        pattern = f"%{query}%"
+        prefix = f"{query}%"
+        conds = [
+            User.deleted_at.is_(None),
+            User.is_banned.is_(False),
+            User.nickname.ilike(pattern),
+        ]
+        if exclude_user_id is not None:
+            conds.append(User.id != exclude_user_id)
+
+        offset = (page - 1) * page_size
+        stmt = (
+            select(User)
+            .where(*conds)
+            .order_by(
+                # 접두 일치(0)가 부분 일치(1)보다 먼저
+                case((User.nickname.ilike(prefix), 0), else_=1),
+                User.nickname.asc(),
+            )
+            .offset(offset)
+            .limit(page_size + 1)
+        )
+        result = await self.session.execute(stmt)
+        rows = list(result.scalars().all())
+        has_next = len(rows) > page_size
+        return rows[:page_size], has_next
+
     async def list_active(self, page: int = 1, page_size: int = 20) -> list[User]:
         offset = (page - 1) * page_size
         result = await self.session.execute(

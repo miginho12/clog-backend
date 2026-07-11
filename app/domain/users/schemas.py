@@ -42,6 +42,7 @@ class UserPublicResponse(UserBase):
     nickname: str
     profile_image_url: str | None = None
     bio: str | None = None
+    is_public: bool = True  # 게시글 공개 여부 (프론트: false 면 게시글 자리에 안내)
     is_banned: bool = False  # admin 차단 UI 용
     created_at: datetime
 
@@ -84,3 +85,21 @@ class PasswordChangeRequest(BaseModel):
 
     current_password: str = Field(..., min_length=1, max_length=128)
     new_password: str = Field(..., min_length=1, max_length=128)
+
+
+class UserSearchItem(UserBase):
+    """유저 검색 결과 항목 (민감정보 제외)."""
+
+    id: UUID
+    nickname: str
+    profile_image_url: str | None = None
+    bio: str | None = None
+
+
+class UserSearchResponse(BaseModel):
+    """유저 검색 응답 (페이지네이션)."""
+
+    items: list[UserSearchItem]
+    page: int
+    page_size: int
+    has_next: bool
