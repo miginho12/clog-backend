@@ -227,9 +227,14 @@ class UserService:
             UserNotFound: 존재 X 또는 이미 탈퇴됨
         """
         user = await self.get_user(user_id)  # 활성 사용자만
+        removed_follows = await self.repository.delete_follows(user_id)
         await self.repository.anonymize_and_soft_delete(user)
         await self.session.commit()
-        logger.info("user_account_deactivated", user_id=str(user_id))
+        logger.info(
+            "user_account_deactivated",
+            user_id=str(user_id),
+            removed_follows=removed_follows,
+        )
 
     # ── admin Step 3: 차단 ──
 

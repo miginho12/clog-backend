@@ -43,20 +43,22 @@ class FollowRepository:
         await self.session.flush()
 
     async def count_followers(self, *, user_id: UUID) -> int:
-        """이 사용자를 팔로우하는 사람 수."""
+        """이 사용자를 팔로우하는 사람 수 (탈퇴 사용자 제외)."""
         result = await self.session.execute(
             select(func.count())
             .select_from(Follow)
-            .where(Follow.following_id == user_id)
+            .join(User, Follow.follower_id == User.id)
+            .where(Follow.following_id == user_id, User.deleted_at.is_(None))
         )
         return int(result.scalar_one())
 
     async def count_following(self, *, user_id: UUID) -> int:
-        """이 사용자가 팔로우하는 사람 수."""
+        """이 사용자가 팔로우하는 사람 수 (탈퇴 사용자 제외)."""
         result = await self.session.execute(
             select(func.count())
             .select_from(Follow)
-            .where(Follow.follower_id == user_id)
+            .join(User, Follow.following_id == User.id)
+            .where(Follow.follower_id == user_id, User.deleted_at.is_(None))
         )
         return int(result.scalar_one())
 
@@ -65,7 +67,7 @@ class FollowRepository:
         result = await self.session.execute(
             select(User)
             .join(Follow, Follow.follower_id == User.id)
-            .where(Follow.following_id == user_id)
+            .where(Follow.following_id == user_id, User.deleted_at.is_(None))
             .order_by(Follow.created_at.desc())
         )
         return list(result.scalars().all())
@@ -75,7 +77,7 @@ class FollowRepository:
         result = await self.session.execute(
             select(User)
             .join(Follow, Follow.following_id == User.id)
-            .where(Follow.follower_id == user_id)
+            .where(Follow.follower_id == user_id, User.deleted_at.is_(None))
             .order_by(Follow.created_at.desc())
         )
         return list(result.scalars().all())

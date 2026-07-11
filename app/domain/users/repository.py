@@ -147,6 +147,24 @@ class UserRepository:
         await self.session.flush()
         return user
 
+    async def delete_follows(self, user_id: UUID) -> int:
+        """탈퇴 사용자가 얽힌 모든 팔로우 관계 hard delete.
+
+        follows 는 복구 불필요 리소스(모델 주석)라 hard delete.
+        follower/following 양방향 모두 제거 → 상대방 카운트도 정확해짐.
+        """
+        from sqlalchemy import delete, or_
+
+        from app.domain.follows.models import Follow
+
+        result = await self.session.execute(
+            delete(Follow).where(
+                or_(Follow.follower_id == user_id, Follow.following_id == user_id)
+            )
+        )
+        await self.session.flush()
+        return result.rowcount or 0
+
     async def anonymize_and_soft_delete(self, user: User) -> User:
         """탈퇴 처리: email/nickname 익명화 + soft delete.
 
