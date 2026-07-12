@@ -6,7 +6,7 @@ users/repository.py 패턴 동일.
 
 from uuid import UUID
 
-from sqlalchemy import or_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -102,13 +102,19 @@ class ClimbingRepository:
         )
 
         # 공개 범위
+        # 글이 보이는 조건: (글이 public AND 작성자가 공개계정) OR 본인 글
+        # 비공개 계정(User.is_public=False)의 글은 본인에게만 노출.
+        # (승인 팔로워 공개는 팔로우 승인제 도입 후 확장 — Day 24 후속 과제)
+        public_and_visible = and_(
+            ClimbingLog.visibility == "public",
+            User.is_public.is_(True),
+        )
         if viewer_id is None:
-            stmt = stmt.where(ClimbingLog.visibility == "public")
+            stmt = stmt.where(public_and_visible)
         else:
-
             stmt = stmt.where(
                 or_(
-                    ClimbingLog.visibility == "public",
+                    public_and_visible,
                     ClimbingLog.user_id == viewer_id,
                 )
             )
