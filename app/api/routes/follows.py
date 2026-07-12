@@ -63,6 +63,32 @@ async def unfollow_user(
 
 
 @router.get(
+    "/me/follow-requests/count",
+    summary="나에게 온 팔로우 요청 수",
+)
+async def count_my_follow_requests(
+    user: CurrentUserDep,
+    service: FollowServiceDep,
+) -> dict:
+    n = await service.repo.count_pending_requests(user_id=user.id)
+    return {"count": n}
+
+
+@router.delete(
+    "/{follower_id}/follower",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="내 팔로워 삭제 (끊어내기)",
+)
+async def remove_my_follower(
+    follower_id: UUID,
+    user: CurrentUserDep,
+    service: FollowServiceDep,
+) -> Response:
+    await service.remove_follower(owner_id=user.id, follower_id=follower_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get(
     "/me/follow-requests",
     response_model=FollowListResponse,
     summary="나에게 온 팔로우 요청 목록",

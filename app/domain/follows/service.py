@@ -163,3 +163,25 @@ class FollowService:
         return await self.repo.get_status(
             follower_id=follower_id, following_id=following_id
         )
+
+    async def remove_follower(
+        self, *, owner_id: UUID, follower_id: UUID
+    ) -> None:
+        """내 팔로워 끊어내기 (owner 가 자신을 팔로우하던 follower 를 제거).
+
+        언팔로우와 방향이 반대: owner 가 following 대상인 관계를 삭제.
+        idempotent — 관계 없어도 조용히 통과.
+        """
+        await self.repo.remove(
+            follower_id=follower_id, following_id=owner_id
+        )
+        # 그 팔로워가 보냈던 팔로우 알림도 정리 (대칭)
+        await self.notification_service.remove_follow(
+            actor_id=follower_id, recipient_id=owner_id
+        )
+        await self.session.commit()
+        logger.info(
+            "follower_removed",
+            owner=str(owner_id),
+            follower=str(follower_id),
+        )
