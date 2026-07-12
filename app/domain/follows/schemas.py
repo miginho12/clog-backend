@@ -5,7 +5,8 @@ from pydantic import BaseModel, ConfigDict
 class FollowToggleResponse(BaseModel):
     """팔로우/언팔로우 결과."""
 
-    following: bool  # 현재 팔로우 상태
+    following: bool  # 현재 팔로우(accepted) 상태
+    follow_status: str  # "none" | "pending" | "accepted"
     follower_count: int  # 대상의 팔로워 수 (갱신 후)
 
 

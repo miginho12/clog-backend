@@ -21,17 +21,51 @@ class FollowRepository:
         )
         return result.scalar_one_or_none() is not None
 
-    async def add(self, *, follower_id: UUID, following_id: UUID) -> bool:
+    async def get_status(
+        self, *, follower_id: UUID, following_id: UUID
+    ) -> str | None:
+        """팔로우 관계 상태 반환. 없으면 None (pending | accepted)."""
+        result = await self.session.execute(
+            select(Follow.status).where(
+                Follow.follower_id == follower_id,
+                Follow.following_id == following_id,
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def add(
+        self, *, follower_id: UUID, following_id: UUID, status: str = "accepted"
+    ) -> bool:
         """팔로우 추가. 새로 추가 True, 이미 있으면 False (idempotent)."""
         if await self.exists(
             follower_id=follower_id, following_id=following_id
         ):
             return False
         self.session.add(
-            Follow(follower_id=follower_id, following_id=following_id)
+            Follow(
+                follower_id=follower_id,
+                following_id=following_id,
+                status=status,
+            )
         )
         await self.session.flush()
         return True
+
+    async def accept(self, *, follower_id: UUID, following_id: UUID) -> bool:
+        """pending → accepted. 갱신된 행 있으면 True."""
+        from sqlalchemy import update
+
+        result = await self.session.execute(
+            update(Follow)
+            .where(
+                Follow.follower_id == follower_id,
+                Follow.following_id == following_id,
+                Follow.status == "pending",
+            )
+            .values(status="accepted")
+        )
+        await self.session.flush()
+        return (result.rowcount or 0) > 0
 
     async def remove(self, *, follower_id: UUID, following_id: UUID) -> None:
         await self.session.execute(
@@ -48,7 +82,11 @@ class FollowRepository:
             select(func.count())
             .select_from(Follow)
             .join(User, Follow.follower_id == User.id)
-            .where(Follow.following_id == user_id, User.deleted_at.is_(None))
+            .where(
+                Follow.following_id == user_id,
+                Follow.status == "accepted",
+                User.deleted_at.is_(None),
+            )
         )
         return int(result.scalar_one())
 
@@ -58,7 +96,11 @@ class FollowRepository:
             select(func.count())
             .select_from(Follow)
             .join(User, Follow.following_id == User.id)
-            .where(Follow.follower_id == user_id, User.deleted_at.is_(None))
+            .where(
+                Follow.follower_id == user_id,
+                Follow.status == "accepted",
+                User.deleted_at.is_(None),
+            )
         )
         return int(result.scalar_one())
 
@@ -67,7 +109,11 @@ class FollowRepository:
         result = await self.session.execute(
             select(User)
             .join(Follow, Follow.follower_id == User.id)
-            .where(Follow.following_id == user_id, User.deleted_at.is_(None))
+            .where(
+                Follow.following_id == user_id,
+                Follow.status == "accepted",
+                User.deleted_at.is_(None),
+            )
             .order_by(Follow.created_at.desc())
         )
         return list(result.scalars().all())
@@ -77,7 +123,11 @@ class FollowRepository:
         result = await self.session.execute(
             select(User)
             .join(Follow, Follow.following_id == User.id)
-            .where(Follow.follower_id == user_id, User.deleted_at.is_(None))
+            .where(
+                Follow.follower_id == user_id,
+                Follow.status == "accepted",
+                User.deleted_at.is_(None),
+            )
             .order_by(Follow.created_at.desc())
         )
         return list(result.scalars().all())
@@ -94,6 +144,35 @@ class FollowRepository:
             select(Follow.following_id).where(
                 Follow.follower_id == follower_id,
                 Follow.following_id.in_(user_ids),
+                Follow.status == "accepted",
             )
         )
         return {row[0] for row in result.all()}
+
+    async def list_pending_requests(self, *, user_id: UUID) -> list[User]:
+        """나에게 온 팔로우 요청(pending)의 요청자 목록 (최신순)."""
+        result = await self.session.execute(
+            select(User)
+            .join(Follow, Follow.follower_id == User.id)
+            .where(
+                Follow.following_id == user_id,
+                Follow.status == "pending",
+                User.deleted_at.is_(None),
+            )
+            .order_by(Follow.created_at.desc())
+        )
+        return list(result.scalars().all())
+
+    async def count_pending_requests(self, *, user_id: UUID) -> int:
+        """나에게 온 팔로우 요청 수 (뱃지용)."""
+        result = await self.session.execute(
+            select(func.count())
+            .select_from(Follow)
+            .join(User, Follow.follower_id == User.id)
+            .where(
+                Follow.following_id == user_id,
+                Follow.status == "pending",
+                User.deleted_at.is_(None),
+            )
+        )
+        return int(result.scalar_one())

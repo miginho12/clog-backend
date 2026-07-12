@@ -44,6 +44,7 @@ class UserPublicResponse(UserBase):
     bio: str | None = None
     is_public: bool = True  # 게시글 공개 여부 (프론트: false 면 게시글 자리에 안내)
     is_banned: bool = False  # admin 차단 UI 용
+    follow_status: str = "none"  # viewer→이 사용자: none | pending | accepted
     created_at: datetime
 
 class UserCreate(BaseModel):

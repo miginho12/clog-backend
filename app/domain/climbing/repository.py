@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.domain.climbing.models import ClimbingLog
+from app.domain.follows.models import Follow
 from app.domain.users.models import User
 
 
@@ -112,10 +113,23 @@ class ClimbingRepository:
         if viewer_id is None:
             stmt = stmt.where(public_and_visible)
         else:
+            # viewer 가 accepted 로 팔로우한 작성자 집합 (비공개라도 그 글은 보임)
+            accepted_authors = (
+                select(Follow.following_id)
+                .where(
+                    Follow.follower_id == viewer_id,
+                    Follow.status == "accepted",
+                )
+                .scalar_subquery()
+            )
             stmt = stmt.where(
                 or_(
                     public_and_visible,
                     ClimbingLog.user_id == viewer_id,
+                    and_(
+                        ClimbingLog.visibility == "public",
+                        ClimbingLog.user_id.in_(accepted_authors),
+                    ),
                 )
             )
 

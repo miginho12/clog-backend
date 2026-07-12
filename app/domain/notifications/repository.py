@@ -94,6 +94,19 @@ class NotificationRepository:
         for n in result.scalars().all():
             await self.session.delete(n)
 
+    async def delete_follow_typed(
+        self, *, actor_id: UUID, recipient_id: UUID, type: NotificationType
+    ) -> None:
+        """actor→recipient 의 특정 타입 알림 제거 (follow_request 취소 등)."""
+        stmt = select(Notification).where(
+            Notification.actor_id == actor_id,
+            Notification.recipient_id == recipient_id,
+            Notification.type == type,
+        )
+        result = await self.session.execute(stmt)
+        for n in result.scalars().all():
+            await self.session.delete(n)
+
     async def delete_follow(
         self, *, actor_id: UUID, recipient_id: UUID
     ) -> None:

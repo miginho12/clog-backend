@@ -10,8 +10,16 @@
 """
 import uuid
 from datetime import datetime
+from typing import Literal
 
-from sqlalchemy import DateTime, ForeignKey, UniqueConstraint, func
+from sqlalchemy import (
+    DateTime,
+    ForeignKey,
+    String,
+    UniqueConstraint,
+    func,
+    text,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -47,6 +55,16 @@ class Follow(Base):
         index=True,
         comment="팔로우 받는 사용자 (대상)",
     )
+    # 팔로우 상태 (Day 25): pending(비공개 계정 승인 대기) / accepted(수락됨)
+    # 공개 계정 팔로우는 즉시 accepted, 비공개 계정은 pending 요청.
+    status: Mapped[Literal["pending", "accepted"]] = mapped_column(
+        String(20),
+        nullable=False,
+        server_default=text("'accepted'"),
+        index=True,
+        comment="팔로우 상태 (pending | accepted)",
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

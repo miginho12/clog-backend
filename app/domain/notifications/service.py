@@ -65,6 +65,50 @@ class NotificationService:
             actor=str(actor_id),
         )
 
+    async def notify_follow_request(
+        self, *, recipient_id: UUID, actor_id: UUID
+    ) -> None:
+        """팔로우 요청 알림 (비공개 계정에게). actor 가 recipient 에게 요청."""
+        if recipient_id == actor_id:
+            return
+        await self.repo.create(
+            recipient_id=recipient_id,
+            actor_id=actor_id,
+            type="follow_request",
+        )
+        logger.info(
+            "notification_created",
+            type="follow_request",
+            recipient=str(recipient_id),
+            actor=str(actor_id),
+        )
+
+    async def notify_follow_accept(
+        self, *, recipient_id: UUID, actor_id: UUID
+    ) -> None:
+        """팔로우 요청 수락 알림. recipient(요청자) 에게 actor(수락자) 가 수락."""
+        if recipient_id == actor_id:
+            return
+        await self.repo.create(
+            recipient_id=recipient_id,
+            actor_id=actor_id,
+            type="follow_accept",
+        )
+        logger.info(
+            "notification_created",
+            type="follow_accept",
+            recipient=str(recipient_id),
+            actor=str(actor_id),
+        )
+
+    async def remove_follow_request(
+        self, *, actor_id: UUID, recipient_id: UUID
+    ) -> None:
+        """팔로우 요청 취소/거절 시 요청 알림 제거."""
+        await self.repo.delete_follow_typed(
+            actor_id=actor_id, recipient_id=recipient_id, type="follow_request"
+        )
+
     async def remove_post_like(
         self, *, actor_id: UUID, climbing_log_id: UUID
     ) -> None:

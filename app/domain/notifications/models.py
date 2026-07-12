@@ -43,6 +43,8 @@ NotificationType = Literal[
     "media_ready",
     "media_failed",
     "follow",
+    "follow_request",  # Day 25: 비공개 계정에 팔로우 요청 옴
+    "follow_accept",   # Day 25: 내 팔로우 요청이 수락됨
 ]
 
 

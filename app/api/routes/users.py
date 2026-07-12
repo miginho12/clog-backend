@@ -9,6 +9,7 @@ from app.api.dependencies import AdminUserDep, CurrentUserDep, OptionalUserId
 from app.core.rate_limit import RateLimits, limiter
 from app.domain.auth.dependencies import get_refresh_token_repository
 from app.domain.auth.repository import RedisRefreshTokenRepository
+from app.domain.follows.dependencies import FollowServiceDep
 from app.domain.users.dependencies import UserServiceDep
 from app.domain.users.exceptions import UserUpdateForbidden
 from app.domain.users.schemas import (
@@ -132,12 +133,18 @@ async def get_user(
     user_id: UUID,
     current_user: CurrentUserDep,
     service: UserServiceDep,
+    follow_service: FollowServiceDep,
 ) -> UserPublicResponse:
     target = await service.get_user_for_viewer(
         target_user_id=user_id,
         viewer_user_id=current_user.id,
     )
-    return UserPublicResponse.model_validate(target)
+    resp = UserPublicResponse.model_validate(target)
+    if target.id != current_user.id:
+        resp.follow_status = await follow_service.get_follow_status(
+            follower_id=current_user.id, following_id=target.id
+        ) or "none"
+    return resp
 
 
 @router.patch(

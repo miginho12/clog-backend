@@ -18,3 +18,11 @@ class FollowTargetNotFound(FollowError):
     def __init__(self, user_id: str) -> None:
         self.user_id = user_id
         super().__init__(f"사용자를 찾을 수 없습니다: {user_id}")
+
+
+class FollowRequestNotFound(FollowError):
+    """수락/거절할 팔로우 요청(pending)이 없음."""
+
+    def __init__(self, follower_id: str) -> None:
+        self.follower_id = follower_id
+        super().__init__(f"팔로우 요청을 찾을 수 없습니다: {follower_id}")

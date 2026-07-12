@@ -35,6 +35,7 @@ from app.domain.comments.exceptions import (
 )
 from app.domain.follows.exceptions import (
     CannotFollowSelf,
+    FollowRequestNotFound,
     FollowTargetNotFound,
 )
 from app.domain.grade.exceptions import (
@@ -422,6 +423,12 @@ async def follow_target_not_found_handler(
     return _error_response(404, "FOLLOW_TARGET_NOT_FOUND", "팔로우 대상 사용자를 찾을 수 없습니다")
 
 
+async def follow_request_not_found_handler(
+    request: Request, exc: FollowRequestNotFound
+) -> JSONResponse:
+    return _error_response(404, "FOLLOW_REQUEST_NOT_FOUND", "팔로우 요청을 찾을 수 없습니다")
+
+
 async def password_change_not_allowed_handler(
     request: Request, exc: PasswordChangeNotAllowed
 ) -> JSONResponse:
@@ -491,6 +498,7 @@ def register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(CommentLikeTargetNotFound, comment_like_target_not_found_handler)
     app.add_exception_handler(CannotFollowSelf, cannot_follow_self_handler)
     app.add_exception_handler(FollowTargetNotFound, follow_target_not_found_handler)
+    app.add_exception_handler(FollowRequestNotFound, follow_request_not_found_handler)
     app.add_exception_handler(MediaError, media_error_handler)
 
     # Grade 도메인 (구현 5)

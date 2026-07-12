@@ -10,10 +10,11 @@
 """
 from uuid import UUID
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Response, status
 
 from app.api.dependencies import CurrentUserDep, OptionalUserId
 from app.domain.follows.dependencies import FollowServiceDep
+from app.domain.follows.exceptions import FollowRequestNotFound  # noqa: F401 (핸들러 등록용)
 from app.domain.follows.schemas import (
     FollowListResponse,
     FollowToggleResponse,
@@ -34,9 +35,13 @@ async def follow_user(
     user: CurrentUserDep,
     service: FollowServiceDep,
 ) -> FollowToggleResponse:
-    await service.follow(follower_id=user.id, following_id=user_id)
+    status_str = await service.follow(follower_id=user.id, following_id=user_id)
     count = await service.repo.count_followers(user_id=user_id)
-    return FollowToggleResponse(following=True, follower_count=count)
+    return FollowToggleResponse(
+        following=status_str == "accepted",
+        follow_status=status_str,
+        follower_count=count,
+    )
 
 
 @router.delete(
@@ -52,7 +57,59 @@ async def unfollow_user(
 ) -> FollowToggleResponse:
     await service.unfollow(follower_id=user.id, following_id=user_id)
     count = await service.repo.count_followers(user_id=user_id)
-    return FollowToggleResponse(following=False, follower_count=count)
+    return FollowToggleResponse(
+        following=False, follow_status="none", follower_count=count
+    )
+
+
+@router.get(
+    "/me/follow-requests",
+    response_model=FollowListResponse,
+    summary="나에게 온 팔로우 요청 목록",
+)
+async def list_my_follow_requests(
+    user: CurrentUserDep,
+    service: FollowServiceDep,
+) -> FollowListResponse:
+    users = await service.repo.list_pending_requests(user_id=user.id)
+    items = [
+        FollowUserItem(
+            id=str(u.id),
+            nickname=u.nickname,
+            profile_image_url=u.profile_image_url,
+            is_following=False,
+        )
+        for u in users
+    ]
+    return FollowListResponse(users=items, total=len(items))
+
+
+@router.post(
+    "/{requester_id}/follow-request/accept",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="팔로우 요청 수락",
+)
+async def accept_follow_request(
+    requester_id: UUID,
+    user: CurrentUserDep,
+    service: FollowServiceDep,
+) -> Response:
+    await service.accept_request(owner_id=user.id, requester_id=requester_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/{requester_id}/follow-request/reject",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="팔로우 요청 거절",
+)
+async def reject_follow_request(
+    requester_id: UUID,
+    user: CurrentUserDep,
+    service: FollowServiceDep,
+) -> Response:
+    await service.reject_request(owner_id=user.id, requester_id=requester_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get(
