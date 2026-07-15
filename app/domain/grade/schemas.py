@@ -171,3 +171,33 @@ class ProfileStats(BaseModel):
     top_grade: str | None = None  # 최고 등급 라벨 (예: "V5" or "보")
     top_grade_gym: str | None = None  # color 최고등급 기준 짐 (color 일 때만)
     top_grade_system: str = "v_scale"  # "v_scale" or "color"
+
+
+# ─────────────────────────────────────────
+#  암장 랭킹 (구현 7)
+# ─────────────────────────────────────────
+class GymRankingUser(BaseModel):
+    """랭킹 항목의 유저 정보. 공개 계정만 대상이라 최소 정보만."""
+
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    nickname: str
+    profile_image_url: str | None = None
+
+
+class GymRankingEntry(BaseModel):
+    """암장 랭킹 한 명."""
+
+    rank: int  # 1부터
+    user: GymRankingUser
+    score: float  # display_score (comprehensive_score 와 동일 산식)
+    top_color_label: str  # 이 암장에서의 최고 완등 색
+    counted_logs: int
+
+
+class GymRankingResponse(BaseModel):
+    """암장 랭킹 응답."""
+
+    gym_name: str
+    brand_name: str | None
+    entries: list[GymRankingEntry]

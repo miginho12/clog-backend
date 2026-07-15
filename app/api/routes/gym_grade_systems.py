@@ -3,6 +3,7 @@
 엔드포인트:
 - POST   /gym-grade-systems              등록 (인증 필수, 중복 gym_name → 409)
 - GET    /gym-grade-systems              목록 (공개, ?brand_name= 으로 브랜드 필터)
+- GET    /gym-grade-systems/ranking      암장 랭킹 (공개, ?gym_name= 필수 — 공개 계정 공개 컬러 기록만)
 - GET    /gym-grade-systems/{id}         단건 (공개)
 - PATCH  /gym-grade-systems/{id}         color_order + brand_name 수정 (본인 비공식 등록분만)
 - DELETE /gym-grade-systems/{id}         삭제 (본인 비공식 등록분만)
@@ -23,6 +24,7 @@ from app.domain.grade.schemas import (
     GymGradeSystemCreate,
     GymGradeSystemResponse,
     GymGradeSystemUpdate,
+    GymRankingResponse,
 )
 
 router = APIRouter(prefix="/gym-grade-systems", tags=["gym-grade-systems"])
@@ -63,6 +65,21 @@ async def list_gym_systems(
 ) -> list[GymGradeSystemResponse]:
     systems = await service.list_gym_systems(brand_name=brand_name)
     return [GymGradeSystemResponse.model_validate(s) for s in systems]
+
+
+# 고정 경로("/ranking")는 /{system_id}(UUID) 보다 반드시 먼저 등록한다.
+# 둘 다 세그먼트 1개라 뒤에 두면 "ranking" 이 system_id 로 매칭돼
+# UUID 파싱 에러(422)가 난다 (CLAUDE.md 라우트 순서 규칙).
+@router.get(
+    "/ranking",
+    response_model=GymRankingResponse,
+    summary="암장 랭킹 (공개 계정의 공개 컬러 등급 기록만)",
+)
+async def get_gym_ranking(
+    service: GradeServiceDep,
+    gym_name: str = Query(..., description="랭킹을 볼 암장(지점) 이름"),
+) -> GymRankingResponse:
+    return await service.compute_gym_ranking(gym_name)
 
 
 @router.get(

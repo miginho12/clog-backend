@@ -9,10 +9,11 @@ DB 조회가 필요한 집계/CRUD 는 GradeService 에 위치.
 
 import math
 import re
-from collections import Counter
+from collections import Counter, defaultdict
 from datetime import UTC, date, datetime, timedelta
 from uuid import UUID
 
+from app.domain.climbing.models import ClimbingLog
 from app.domain.grade.exceptions import (
     GymGradeSystemAlreadyExists,
     GymGradeSystemForbidden,
@@ -21,7 +22,13 @@ from app.domain.grade.exceptions import (
 )
 from app.domain.grade.models import GymGradeSystem
 from app.domain.grade.repository import GradeRepository
-from app.domain.grade.schemas import ColorGrade, VScaleGrade
+from app.domain.grade.schemas import (
+    ColorGrade,
+    GymRankingEntry,
+    GymRankingResponse,
+    GymRankingUser,
+    VScaleGrade,
+)
 
 # 종합점수에 반영할 상위 기록 수 (ADR-045: 상위 N개의 합)
 TOP_N = 10
@@ -526,6 +533,73 @@ class GradeService:
             counted_logs=counted,
             next_grade_label=next_grade_label,
             readiness_pct=readiness_pct,
+        )
+
+    # ── 암장 랭킹 (구현 7) ──
+
+    async def compute_gym_ranking(self, gym_name: str) -> GymRankingResponse:
+        """이 암장(지점)의 공개 리더보드.
+
+        compute_color_grade 와 같은 산식(aggregate_score)을 쓰되, 범위를
+        "이 암장 기록만"으로 좁혀 여러 유저를 비교한다. 뷰어 무관 —
+        공개 계정의 공개 글만 대상 (compute_color_grade 의 본인 private
+        포함과 다름, list_public_color_logs_for_gym 참고).
+
+        등록 안 된 암장이면 GymGradeSystemNotFound.
+        """
+        system = await self.repo.get_by_gym_name(gym_name)
+        if system is None:
+            raise GymGradeSystemNotFound(gym_name)
+
+        logs = await self.repo.list_public_color_logs_for_gym(gym_name)
+        today = datetime.now(UTC).date()
+
+        by_user: defaultdict[UUID, list[ClimbingLog]] = defaultdict(list)
+        for log in logs:
+            by_user[log.user_id].append(log)
+
+        entries: list[GymRankingEntry] = []
+        for user_logs in by_user.values():
+            successes: list[tuple[float, int, date]] = []
+            failures: list[tuple[float, int, date]] = []
+            success_ratios: list[float] = []
+            for log in user_logs:
+                rank = self.repo.color_to_rank(system, log.grade_raw)
+                if rank is None:
+                    continue
+                ratio = self.repo.rank_to_ratio(system, rank)
+                entry = (color_difficulty(ratio), log.attempts, log.climbed_at)
+                if log.is_success:
+                    successes.append(entry)
+                    success_ratios.append(ratio)
+                else:
+                    failures.append(entry)
+
+            if not success_ratios:
+                continue  # 완등 기록 없으면 랭킹 표시 안 함 (0점 도배 방지)
+
+            raw_score, counted = aggregate_score(
+                successes=successes, failures=failures, today=today
+            )
+            top_color = self.repo.ratio_to_color(system, max(success_ratios))
+            entries.append(
+                GymRankingEntry(
+                    rank=0,  # 정렬 후 일괄 부여
+                    user=GymRankingUser.model_validate(user_logs[0].user),
+                    score=display_score(raw_score),
+                    top_color_label=top_color,
+                    counted_logs=counted,
+                )
+            )
+
+        entries.sort(key=lambda e: e.score, reverse=True)
+        for i, e in enumerate(entries, start=1):
+            e.rank = i
+
+        return GymRankingResponse(
+            gym_name=system.gym_name,
+            brand_name=system.brand_name,
+            entries=entries,
         )
 
     # ── 짐 색체계 CRUD (구현 6) ──
