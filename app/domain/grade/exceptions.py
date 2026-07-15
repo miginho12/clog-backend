@@ -55,3 +55,18 @@ class GymGradeSystemForbidden(GradeDomainError):
     def __init__(self, system_id: str):
         self.system_id = system_id
         super().__init__(f"cannot modify gym grade system: {system_id}")
+
+
+# ── 구현 7: 암장 랭킹 기간 필터 ──
+
+
+class InvalidRankingPeriod(GradeDomainError):
+    """랭킹 기간 파라미터 조합이 잘못됨 (400).
+
+    period=week 인데 week 누락, period=month 인데 month 누락,
+    ISO week 범위(1~53) 밖 등.
+    """
+
+    def __init__(self, reason: str):
+        self.reason = reason
+        super().__init__(f"invalid ranking period: {reason}")

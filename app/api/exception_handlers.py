@@ -43,6 +43,7 @@ from app.domain.grade.exceptions import (
     GymGradeSystemForbidden,
     GymGradeSystemNotFound,
     GymGradeSystemNotFoundById,
+    InvalidRankingPeriod,
 )
 from app.domain.likes.exceptions import LikeTargetNotFound
 from app.domain.media.service import MediaError
@@ -381,6 +382,17 @@ async def gym_grade_system_forbidden_handler(
     )
 
 
+async def invalid_ranking_period_handler(
+    request: Request, exc: InvalidRankingPeriod
+) -> JSONResponse:
+    return _error_response(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        code="invalid_ranking_period",
+        message="랭킹 기간 파라미터가 올바르지 않습니다",
+        reason=exc.reason,
+    )
+
+
 async def media_error_handler(request: Request, exc: MediaError) -> JSONResponse:
     return _error_response(400, exc.code, exc.message, **exc.details)
 
@@ -506,6 +518,7 @@ def register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(GymGradeSystemAlreadyExists, gym_grade_system_already_exists_handler)
     app.add_exception_handler(GymGradeSystemNotFoundById, gym_grade_system_not_found_by_id_handler)
     app.add_exception_handler(GymGradeSystemForbidden, gym_grade_system_forbidden_handler)
+    app.add_exception_handler(InvalidRankingPeriod, invalid_ranking_period_handler)
 
     # Kakao OAuth (Day 12)
     app.add_exception_handler(OAuthStateInvalid, oauth_state_invalid_handler)

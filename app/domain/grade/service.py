@@ -11,6 +11,7 @@ import math
 import re
 from collections import Counter, defaultdict
 from datetime import UTC, date, datetime, timedelta
+from typing import Literal
 from uuid import UUID
 
 from app.domain.climbing.models import ClimbingLog
@@ -19,6 +20,7 @@ from app.domain.grade.exceptions import (
     GymGradeSystemForbidden,
     GymGradeSystemNotFound,
     GymGradeSystemNotFoundById,
+    InvalidRankingPeriod,
 )
 from app.domain.grade.models import GymGradeSystem
 from app.domain.grade.repository import GradeRepository
@@ -253,6 +255,30 @@ def aggregate_score(
 
     counted = len(succ_top) + min(len(fail_contrib), TOP_N)
     return succ_sum + fail_sum, counted
+
+
+def week_date_range(year: int, week: int) -> tuple[date, date]:
+    """ISO 주(year, week) → (월요일, 일요일) 날짜 범위 (구현 7: 기간 랭킹).
+
+    ISO 8601 기준 — 1주차는 그 해의 첫 목요일이 포함된 주.
+    """
+    try:
+        monday = date.fromisocalendar(year, week, 1)
+    except ValueError as e:
+        raise InvalidRankingPeriod(f"잘못된 연도/주차: {year}년 {week}주차") from e
+    return monday, monday + timedelta(days=6)
+
+
+def month_date_range(year: int, month: int) -> tuple[date, date]:
+    """(year, month) → (그 달 1일, 마지막 날) 날짜 범위 (구현 7: 기간 랭킹)."""
+    if not 1 <= month <= 12:
+        raise InvalidRankingPeriod(f"잘못된 월: {month}")
+    try:
+        first = date(year, month, 1)
+    except ValueError as e:
+        raise InvalidRankingPeriod(f"잘못된 연도/월: {year}년 {month}월") from e
+    next_first = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
+    return first, next_first - timedelta(days=1)
 
 
 class GradeService:
@@ -537,7 +563,15 @@ class GradeService:
 
     # ── 암장 랭킹 (구현 7) ──
 
-    async def compute_gym_ranking(self, gym_name: str) -> GymRankingResponse:
+    async def compute_gym_ranking(
+        self,
+        gym_name: str,
+        *,
+        period: Literal["all", "month", "week"] = "all",
+        year: int | None = None,
+        month: int | None = None,
+        week: int | None = None,
+    ) -> GymRankingResponse:
         """이 암장(지점)의 공개 리더보드.
 
         compute_color_grade 와 같은 산식(aggregate_score)을 쓰되, 범위를
@@ -545,13 +579,38 @@ class GradeService:
         공개 계정의 공개 글만 대상 (compute_color_grade 의 본인 private
         포함과 다름, list_public_color_logs_for_gym 참고).
 
+        period="month"|"week" 면 climbed_at 이 그 달/주(ISO)인 기록만
+        따로 집계 — 매번 새로 겨루는 기간 리더보드. "all"(기본)은 전체
+        기간 누적(감쇠 포함, 기존 동작 그대로).
+
         등록 안 된 암장이면 GymGradeSystemNotFound.
+        파라미터 조합이 잘못되면(예: period=week 인데 week 누락)
+        InvalidRankingPeriod.
         """
+        start_date: date | None = None
+        end_date: date | None = None
+        if period == "month":
+            if year is None or month is None:
+                raise InvalidRankingPeriod(
+                    "period=month 에는 year, month 가 모두 필요합니다"
+                )
+            start_date, end_date = month_date_range(year, month)
+        elif period == "week":
+            if year is None or week is None:
+                raise InvalidRankingPeriod(
+                    "period=week 에는 year, week 가 모두 필요합니다"
+                )
+            start_date, end_date = week_date_range(year, week)
+        elif period != "all":
+            raise InvalidRankingPeriod(f"알 수 없는 period: {period}")
+
         system = await self.repo.get_by_gym_name(gym_name)
         if system is None:
             raise GymGradeSystemNotFound(gym_name)
 
-        logs = await self.repo.list_public_color_logs_for_gym(gym_name)
+        logs = await self.repo.list_public_color_logs_for_gym(
+            gym_name, start_date=start_date, end_date=end_date
+        )
         today = datetime.now(UTC).date()
 
         by_user: defaultdict[UUID, list[ClimbingLog]] = defaultdict(list)
@@ -599,6 +658,9 @@ class GradeService:
         return GymRankingResponse(
             gym_name=system.gym_name,
             brand_name=system.brand_name,
+            period=period,
+            range_start=start_date,
+            range_end=end_date,
             entries=entries,
         )
 

@@ -6,6 +6,7 @@
 """
 
 from collections.abc import Iterable
+from datetime import date
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -134,26 +135,39 @@ class GradeRepository:
         return list(result.scalars().all())
 
     async def list_public_color_logs_for_gym(
-        self, gym_name: str
+        self,
+        gym_name: str,
+        *,
+        start_date: date | None = None,
+        end_date: date | None = None,
     ) -> list[ClimbingLog]:
-        """암장 랭킹용: 이 암장의 공개 계정 + 공개 글 + 컬러 등급 기록 전체.
+        """암장 랭킹용: 이 암장의 공개 계정 + 공개 글 + 컬러 등급 기록.
 
         list_feed 와 달리 뷰어 무관 — 누가 봐도 같은 결과인 공개 리더보드라
         본인 private/비공개 계정 예외가 없다. is_banned 필터는 list_feed 와
         동일하게 두지 않음(차단 == 로그인 불가일 뿐, 기존 글은 피드에서도 보임).
+
+        start_date/end_date 를 주면 climbed_at 이 그 범위(양끝 포함)인 것만
+        — 기간(주/월) 랭킹용. 둘 다 None 이면 전체 기간(구현 7 이전 동작).
         """
+        conditions = [
+            ClimbingLog.gym_name == gym_name,
+            ClimbingLog.grade_system == "color",
+            ClimbingLog.visibility == "public",
+            ClimbingLog.deleted_at.is_(None),
+            User.is_public.is_(True),
+            User.deleted_at.is_(None),
+        ]
+        if start_date is not None:
+            conditions.append(ClimbingLog.climbed_at >= start_date)
+        if end_date is not None:
+            conditions.append(ClimbingLog.climbed_at <= end_date)
+
         result = await self.session.execute(
             select(ClimbingLog)
             .join(User, ClimbingLog.user_id == User.id)
             .options(selectinload(ClimbingLog.user))
-            .where(
-                ClimbingLog.gym_name == gym_name,
-                ClimbingLog.grade_system == "color",
-                ClimbingLog.visibility == "public",
-                ClimbingLog.deleted_at.is_(None),
-                User.is_public.is_(True),
-                User.deleted_at.is_(None),
-            )
+            .where(*conditions)
         )
         return list(result.scalars().all())
 

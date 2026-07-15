@@ -7,6 +7,8 @@
 - V스케일 기록 → 컬러 랭킹에 영향 없음
 - 다른 암장 기록 → 이 암장 랭킹에 안 섞임
 - 등록 안 된 암장으로 조회 → GymGradeSystemNotFound
+- period=week → 그 ISO 주 기록만, period=month → 그 달 기록만
+- period 파라미터 조합이 잘못되면 InvalidRankingPeriod
 
 ★ 선행: brand_name 마이그레이션이 적용돼 있어야 한다 (같은 alembic 라인).
     uv run alembic upgrade head
@@ -17,13 +19,13 @@
 import asyncio
 import sys
 import uuid
-from datetime import date
+from datetime import date, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.infra.db.models  # noqa: F401 — 전체 모델 로드(FK 참조 등록)
 from app.domain.climbing.models import ClimbingLog
-from app.domain.grade.exceptions import GymGradeSystemNotFound
+from app.domain.grade.exceptions import GymGradeSystemNotFound, InvalidRankingPeriod
 from app.domain.grade.repository import GradeRepository
 from app.domain.grade.service import GradeService
 from app.domain.users.models import User
@@ -69,6 +71,7 @@ def make_log(
     grade_system: str = "color",
     is_success: bool = True,
     visibility: str = "public",
+    climbed_at: date | None = None,
 ) -> ClimbingLog:
     return ClimbingLog(
         user_id=user.id,
@@ -77,7 +80,7 @@ def make_log(
         grade_system=grade_system,
         is_success=is_success,
         attempts=1,
-        climbed_at=date.today(),
+        climbed_at=climbed_at or date.today(),
         visibility=visibility,
         categories=[],
     )
@@ -167,6 +170,97 @@ async def run(session: AsyncSession) -> None:
         grade.compute_gym_ranking(f"없는짐_{uuid.uuid4().hex[:6]}"),
         GymGradeSystemNotFound,
         "등록 안 된 암장 조회 → GymGradeSystemNotFound",
+    )
+
+    print("\n[기간 랭킹 — week/month]")
+    period_gym = f"기간테스트짐_{uuid.uuid4().hex[:6]}"
+    await grade.create_gym_system(
+        gym_name=period_gym,
+        color_order=["흰", "노", "검"],
+        user_id=uuid.uuid4(),
+    )
+    # 월 중순(15일) 기준 — 이번 주(week_a) / 같은 달 다른 주(week_b, -7일) /
+    # 다른 달(-40일). 경계 이슈 없게 항상 15일에서 계산.
+    today = date.today()
+    ref = date(today.year, today.month, 15)
+    week_a_date = ref
+    week_b_date = ref - timedelta(days=7)
+    other_month_date = ref - timedelta(days=40)
+
+    week_a_user = make_user("이번주")
+    week_b_user = make_user("같은달다른주")
+    other_month_user = make_user("다른달")
+    session.add_all([week_a_user, week_b_user, other_month_user])
+    await session.flush()
+    session.add_all(
+        [
+            make_log(
+                week_a_user,
+                gym_name=period_gym,
+                grade_raw="검",
+                climbed_at=week_a_date,
+            ),
+            make_log(
+                week_b_user,
+                gym_name=period_gym,
+                grade_raw="노",
+                climbed_at=week_b_date,
+            ),
+            make_log(
+                other_month_user,
+                gym_name=period_gym,
+                grade_raw="검",
+                climbed_at=other_month_date,
+            ),
+        ]
+    )
+    await session.flush()
+
+    iso_year, iso_week, _ = week_a_date.isocalendar()
+    week_ranking = await grade.compute_gym_ranking(
+        period_gym, period="week", year=iso_year, week=iso_week
+    )
+    week_nicknames = [e.user.nickname for e in week_ranking.entries]
+    check(
+        "week 랭킹엔 그 주 기록 유저만",
+        week_a_user.nickname in week_nicknames
+        and week_b_user.nickname not in week_nicknames
+        and other_month_user.nickname not in week_nicknames,
+    )
+    check("week 응답 period 필드", week_ranking.period == "week")
+    check(
+        "week 응답 range 는 월요일~일요일",
+        week_ranking.range_start is not None
+        and week_ranking.range_start.weekday() == 0
+        and (week_ranking.range_end - week_ranking.range_start).days == 6,  # type: ignore[operator]
+    )
+
+    month_ranking = await grade.compute_gym_ranking(
+        period_gym, period="month", year=ref.year, month=ref.month
+    )
+    month_nicknames = [e.user.nickname for e in month_ranking.entries]
+    check(
+        "month 랭킹엔 같은 달(다른 주 포함) 유저만, 다른 달 제외",
+        week_a_user.nickname in month_nicknames
+        and week_b_user.nickname in month_nicknames
+        and other_month_user.nickname not in month_nicknames,
+    )
+
+    print("\n[기간 파라미터 검증]")
+    await expect(
+        grade.compute_gym_ranking(period_gym, period="week", year=2026),
+        InvalidRankingPeriod,
+        "period=week 인데 week 누락 → InvalidRankingPeriod",
+    )
+    await expect(
+        grade.compute_gym_ranking(period_gym, period="month", year=2026),
+        InvalidRankingPeriod,
+        "period=month 인데 month 누락 → InvalidRankingPeriod",
+    )
+    await expect(
+        grade.compute_gym_ranking(period_gym, period="week", year=2026, week=60),
+        InvalidRankingPeriod,
+        "존재하지 않는 ISO 주차(60) → InvalidRankingPeriod",
     )
 
 

@@ -4,7 +4,8 @@
 - 짐 색체계 등록/수정/응답: GymGradeSystem* (구현 6)
 """
 
-from datetime import datetime
+from datetime import date, datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -200,4 +201,7 @@ class GymRankingResponse(BaseModel):
 
     gym_name: str
     brand_name: str | None
+    period: Literal["all", "month", "week"] = "all"
+    range_start: date | None = None  # period="all" 이면 None
+    range_end: date | None = None
     entries: list[GymRankingEntry]
