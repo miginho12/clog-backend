@@ -530,8 +530,10 @@ class GradeService:
 
     # ── 짐 색체계 CRUD (구현 6) ──
 
-    async def list_gym_systems(self) -> list[GymGradeSystem]:
-        return await self.repo.list_all()
+    async def list_gym_systems(
+        self, brand_name: str | None = None
+    ) -> list[GymGradeSystem]:
+        return await self.repo.list_all(brand_name=brand_name)
 
     async def get_gym_system(self, system_id: UUID) -> GymGradeSystem:
         system = await self.repo.get_by_id(system_id)
@@ -547,12 +549,16 @@ class GradeService:
         user_id: UUID,
         is_admin: bool = False,
         is_official: bool = False,
+        brand_name: str | None = None,
     ) -> GymGradeSystem:
         """짐 색체계 등록.
 
         일반 사용자: is_official=False, created_by=user (개인 등록).
         admin: is_official 을 지정 가능 (공식 암장 등록). created_by 는
         감사용으로 등록한 admin id 를 남긴다 (시드는 NULL).
+
+        gym_name 은 지점 단위(예: "피커스 종로")로 등록하고, brand_name 으로
+        같은 브랜드 지점을 묶는다(예: "피커스"). brand_name 은 선택.
 
         gym_name 중복이면 GymGradeSystemAlreadyExists(409).
         """
@@ -566,6 +572,7 @@ class GradeService:
             color_order=color_order,
             created_by=user_id,
             is_official=official,
+            brand_name=brand_name,
         )
         await self.session.commit()
         await self.session.refresh(system)  # commit 후 expire 방지 (응답 직렬화용)
@@ -579,8 +586,9 @@ class GradeService:
         color_order: list[str],
         user_id: UUID,
         is_admin: bool = False,
+        brand_name: str | None = None,
     ) -> GymGradeSystem:
-        """color_order 수정.
+        """color_order + brand_name 수정.
 
         일반 사용자: 본인 등록분(비공식)만. admin: 공식·타인 등록분 포함 전체.
         """
@@ -591,7 +599,9 @@ class GradeService:
             system.is_official or system.created_by != user_id
         ):
             raise GymGradeSystemForbidden(str(system_id))
-        updated = await self.repo.update_color_order(system, color_order)
+        updated = await self.repo.update_color_order(
+            system, color_order, brand_name=brand_name
+        )
         await self.session.commit()
         await self.session.refresh(updated)  # commit 후 expire 방지 (응답 직렬화용)
         return updated

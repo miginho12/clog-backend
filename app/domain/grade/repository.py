@@ -49,10 +49,13 @@ class GradeRepository:
         )
         return {s.gym_name: s for s in result.scalars().all()}
 
-    async def list_all(self) -> list[GymGradeSystem]:
-        result = await self.session.execute(
-            select(GymGradeSystem).order_by(GymGradeSystem.gym_name)
-        )
+    async def list_all(
+        self, brand_name: str | None = None
+    ) -> list[GymGradeSystem]:
+        stmt = select(GymGradeSystem).order_by(GymGradeSystem.gym_name)
+        if brand_name is not None:
+            stmt = stmt.where(GymGradeSystem.brand_name == brand_name)
+        result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
     async def list_official(self) -> list[GymGradeSystem]:
@@ -72,22 +75,33 @@ class GradeRepository:
         color_order: list[str],
         created_by: UUID | None,
         is_official: bool = False,
+        brand_name: str | None = None,
     ) -> GymGradeSystem:
         system = GymGradeSystem(
             gym_name=gym_name,
             color_order=color_order,
             is_official=is_official,
             created_by=created_by,
+            brand_name=brand_name,
         )
         self.session.add(system)
         await self.session.flush()
         return system
 
     async def update_color_order(
-        self, system: GymGradeSystem, color_order: list[str]
+        self,
+        system: GymGradeSystem,
+        color_order: list[str],
+        brand_name: str | None = None,
     ) -> GymGradeSystem:
-        """color_order 만 갱신. gym_name 은 불변(기록 매칭 키)."""
+        """color_order + brand_name 갱신. gym_name 은 불변(기록 매칭 키).
+
+        color_order 와 마찬가지로 brand_name 도 항상 전체 교체(요청에 실린
+        값 그대로 반영) — 수정 폼이 항상 현재값을 채워서 보내므로 부분
+        패치를 지원할 필요 없음.
+        """
         system.color_order = color_order
+        system.brand_name = brand_name
         await self.session.flush()
         return system
 

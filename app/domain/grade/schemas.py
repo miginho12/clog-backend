@@ -73,7 +73,13 @@ def _validate_color_order(v: list[str]) -> list[str]:
 class GymGradeSystemCreate(BaseModel):
     """짐 색체계 등록 요청. color_order 는 쉬운→어려운 순."""
 
-    gym_name: str = Field(..., min_length=1, max_length=100, examples=["클라이밍파크 신촌"])
+    gym_name: str = Field(..., min_length=1, max_length=100, examples=["피커스 종로"])
+    brand_name: str | None = Field(
+        default=None,
+        max_length=100,
+        examples=["피커스"],
+        description="브랜드/체인 이름 — 같은 브랜드의 다른 지점과 묶어보는 용도 (선택)",
+    )
     color_order: list[str] = Field(
         ...,
         examples=[["흰", "노", "주", "초", "파", "빨", "보", "검"]],
@@ -92,6 +98,14 @@ class GymGradeSystemCreate(BaseModel):
             raise ValueError("gym_name 은 비어 있을 수 없습니다")
         return v
 
+    @field_validator("brand_name")
+    @classmethod
+    def _strip_brand_name(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        v = v.strip()
+        return v or None
+
     @field_validator("color_order")
     @classmethod
     def _validate_colors(cls, v: list[str]) -> list[str]:
@@ -99,11 +113,25 @@ class GymGradeSystemCreate(BaseModel):
 
 
 class GymGradeSystemUpdate(BaseModel):
-    """짐 색체계 수정 요청. color_order 만 수정 가능 (gym_name 불변)."""
+    """짐 색체계 수정 요청. color_order + brand_name 수정 가능 (gym_name 불변)."""
 
     color_order: list[str] = Field(
         ..., examples=[["흰", "노", "주", "초", "파", "빨", "보", "회", "검"]]
     )
+    brand_name: str | None = Field(
+        default=None,
+        max_length=100,
+        examples=["피커스"],
+        description="브랜드/체인 이름 (선택, 비우면 소속 브랜드 없음)",
+    )
+
+    @field_validator("brand_name")
+    @classmethod
+    def _strip_brand_name(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        v = v.strip()
+        return v or None
 
     @field_validator("color_order")
     @classmethod
@@ -118,6 +146,7 @@ class GymGradeSystemResponse(BaseModel):
 
     id: UUID
     gym_name: str
+    brand_name: str | None
     color_order: list[str]
     is_official: bool
     created_by: UUID | None

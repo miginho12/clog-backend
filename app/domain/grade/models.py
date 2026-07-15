@@ -40,7 +40,14 @@ class GymGradeSystem(Base):
         String(100),
         nullable=False,
         unique=True,
-        comment="짐(암장) 이름 — climbing_logs.gym_name 과 매칭",
+        comment="짐(암장) 이름 — climbing_logs.gym_name 과 매칭. 지점 단위(예: '피커스 종로')",
+    )
+
+    brand_name: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+        comment="브랜드/체인 이름 (예: '피커스') — 같은 브랜드 지점을 묶어보는 용도. "
+        "지점별 color_order 는 별개로 유지됨",
     )
 
     color_order: Mapped[list[str]] = mapped_column(
