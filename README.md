@@ -55,6 +55,12 @@ uv sync
 # 환경변수 복사
 cp .env.example .env
 
+# 로컬 전용 postgres + redis 기동 (클러스터 dev DB와 무관 — kubectl port-forward 쓰지 말 것)
+docker-compose up -d
+
+# DB 스키마 적용
+uv run alembic upgrade head
+
 # 개발 서버 (auto-reload)
 uv run uvicorn app.main:app --reload
 
