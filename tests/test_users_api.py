@@ -14,6 +14,11 @@ from fastapi.testclient import TestClient
 from app.infra.db import close_engine, init_engine
 from app.main import app
 
+pytestmark = pytest.mark.skip(
+    reason="POST /users, GET /users 라우트가 사라짐(회원가입은 /auth/register 이메일 인증 플로우로 이동, "
+    "GET /users/{id}는 인증 필수로 변경). 현재 API 기준으로 재작성 필요."
+)
+
 
 @pytest.fixture(autouse=True)
 async def setup_db():
