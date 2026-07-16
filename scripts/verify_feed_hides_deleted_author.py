@@ -18,7 +18,6 @@ from app.domain.climbing.repository import ClimbingRepository
 from app.domain.users.models import User
 from app.domain.users.repository import UserRepository
 from app.domain.users.service import UserService
-
 from app.infra.db.engine import close_engine, init_engine
 
 GREEN = "\033[92m"

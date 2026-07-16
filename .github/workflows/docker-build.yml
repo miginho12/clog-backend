@@ -12,7 +12,65 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: clog
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: clog_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DB_HOST: localhost
+      DB_PORT: 5432
+      DB_USER: clog
+      DB_PASSWORD: test_password
+      DB_NAME: clog_test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Lint (ruff)
+        run: uv run ruff check .
+
+      - name: Type check (mypy)
+        run: uv run mypy app
+        continue-on-error: true
+
+      - name: Generate ephemeral JWT keypair
+        run: |
+          openssl genrsa -out /tmp/jwt-private.pem 2048
+          openssl rsa -in /tmp/jwt-private.pem -pubout -out /tmp/jwt-public.pem
+          echo "JWT_PRIVATE_KEY_PATH=/tmp/jwt-private.pem" >> "$GITHUB_ENV"
+          echo "JWT_PUBLIC_KEY_PATH=/tmp/jwt-public.pem" >> "$GITHUB_ENV"
+
+      - name: Run migrations
+        run: uv run alembic upgrade head
+
+      - name: Run tests
+        run: uv run pytest -v
+
   build:
+    needs: test
     runs-on: ubuntu-latest
     permissions:
       contents: read

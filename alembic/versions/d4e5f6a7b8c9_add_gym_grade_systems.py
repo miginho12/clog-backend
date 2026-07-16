@@ -13,16 +13,17 @@ Create Date: 2026-06-25 10:00:00.000000
 - 더클라임, 클라이밍파크(종로/강남 흰색이 최상급), 손상원, 알레, 피커스, 크래커
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 import sqlalchemy as sa
-from alembic import op
 from sqlalchemy.dialects import postgresql
 
+from alembic import op
+
 revision: str = "d4e5f6a7b8c9"
-down_revision: Union[str, None] = "c3d4e5f6a7b8"  # climbing_logs
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = "c3d4e5f6a7b8"  # climbing_logs
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 # 시드 데이터: (짐 이름, [쉬운→어려운 색 순서])

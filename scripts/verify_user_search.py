@@ -54,20 +54,20 @@ async def run(session: AsyncSession) -> None:
     users = UserService(session, repo)
 
     # 고유 접두어로 이 테스트 사용자만 걸리게
-    P = f"zz{uuid.uuid4().hex[:6]}"
-    climber = make_user(f"{P}_climber")       # 접두 일치
-    climbing = make_user(f"{P}_climbing")     # 접두 일치
-    myclimber = make_user(f"my{P}_climber")   # 부분 일치(접두 아님)
-    banned = make_user(f"{P}_banned", is_banned=True)
-    gone = make_user(f"{P}_gone", deleted=True)
-    private = make_user(f"{P}_private", is_public=False)
-    viewer = make_user(f"{P}_viewer")
+    prefix = f"zz{uuid.uuid4().hex[:6]}"
+    climber = make_user(f"{prefix}_climber")       # 접두 일치
+    climbing = make_user(f"{prefix}_climbing")     # 접두 일치
+    myclimber = make_user(f"my{prefix}_climber")   # 부분 일치(접두 아님)
+    banned = make_user(f"{prefix}_banned", is_banned=True)
+    gone = make_user(f"{prefix}_gone", deleted=True)
+    private = make_user(f"{prefix}_private", is_public=False)
+    viewer = make_user(f"{prefix}_viewer")
 
     session.add_all([climber, climbing, myclimber, banned, gone, private, viewer])
     await session.flush()
 
     print("\n[검색 — 부분/접두/제외]")
-    items, has_next = await users.search_users(query=P, viewer_id=viewer.id)
+    items, has_next = await users.search_users(query=prefix, viewer_id=viewer.id)
     names = [u.nickname for u in items]
 
     check("부분검색으로 접두·부분 일치 모두 잡힘",
@@ -82,7 +82,7 @@ async def run(session: AsyncSession) -> None:
     check("접두 일치가 부분 일치보다 먼저 정렬", idx_prefix < idx_partial)
 
     print("\n[페이지네이션]")
-    pg, hn = await users.search_users(query=P, viewer_id=viewer.id, page=1, page_size=2)
+    pg, hn = await users.search_users(query=prefix, viewer_id=viewer.id, page=1, page_size=2)
     check("page_size=2 → 2건 반환", len(pg) == 2)
     check("has_next=True (더 있음)", hn is True)
 

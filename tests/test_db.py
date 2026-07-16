@@ -11,8 +11,8 @@
 import pytest
 from fastapi.testclient import TestClient
 
+from app.infra.db import close_engine, init_engine, ping_db
 from app.main import app
-from app.infra.db import init_engine, close_engine, ping_db
 
 
 @pytest.fixture(autouse=True)

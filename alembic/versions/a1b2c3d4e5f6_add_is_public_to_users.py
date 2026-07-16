@@ -6,16 +6,17 @@ Create Date: 2026-06-15 10:00:00.000000
 
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 import sqlalchemy as sa
+
 from alembic import op
 
 # revision identifiers
 revision: str = "a1b2c3d4e5f6"
-down_revision: Union[str, None] = "c3f45b4553f4"  # Day 9 의 첫 마이그레이션
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = "c3f45b4553f4"  # Day 9 의 첫 마이그레이션
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:

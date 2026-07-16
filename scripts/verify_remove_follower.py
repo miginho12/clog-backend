@@ -23,7 +23,9 @@ from app.domain.users.models import User
 from app.domain.users.repository import UserRepository
 from app.infra.db.engine import close_engine, init_engine
 
-GREEN = "\033[92m"; RED = "\033[91m"; RESET = "\033[0m"
+GREEN = "\033[92m"
+RED = "\033[91m"
+RESET = "\033[0m"
 _results: list[bool] = []
 
 
