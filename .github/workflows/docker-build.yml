@@ -151,3 +151,16 @@ jobs:
           git diff --cached --quiet && echo "No changes, skipping commit" && exit 0
           git commit -m "chore: bump clog image tag to ${SHA_TAG}"
           git push
+
+  notify-failure:
+    needs: [test, build]
+    if: always() && contains(needs.*.result, 'failure') && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notify Discord on CI failure
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          curl -sf -X POST "$DISCORD_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -d "{\"content\": \"❌ **clog-backend** CI 실패 (${{ github.ref_name }})\\n커밋: \`${{ github.sha }}\`\\n${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}"
