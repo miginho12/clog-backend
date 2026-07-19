@@ -185,7 +185,10 @@ class ClimbingService:
         # (예: 미디어 제거) 이므로 None 필터링하지 않고 그대로 반영.
         log = await self.repo.update(log, **data)
         await self.session.commit()
-        await self.session.refresh(log, ["user"])
+        # attribute_names 지정 시 그 목록만 리프레시된다 — updated_at(onupdate=func.now())도
+        # 같이 넣지 않으면 expired 상태로 남아 응답 직렬화 시 MissingGreenlet 500 발생
+        # (2026-07-19: 기록 수정 시 첫 저장 500, 재시도해야 성공하던 버그의 원인).
+        await self.session.refresh(log, ["user", "updated_at"])
         await self._attach_likes([log], user_id)
         logger.info("climbing_log_updated", log_id=str(log_id))
         return log

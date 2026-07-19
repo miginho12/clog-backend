@@ -185,7 +185,9 @@ class CommentService:
             raise CommentForbidden(str(comment_id))
         comment = await self.repo.update_content(comment, content)
         await self.session.commit()
-        await self.session.refresh(comment, ["user"])
+        # updated_at(onupdate=func.now())도 같이 리프레시해야 한다 — climbing
+        # update_log 와 동일한 원인의 500 버그 (2026-07-19).
+        await self.session.refresh(comment, ["user", "updated_at"])
         comment.is_mine = True
         comment.like_count = await self.like_repo.count(comment_id=comment.id)
         comment.liked_by_me = await self.like_repo.exists(
@@ -230,7 +232,9 @@ class CommentService:
             raise CommentForbidden(str(comment_id))
         comment = await self.repo.set_pinned(comment, pinned)
         await self.session.commit()
-        await self.session.refresh(comment, ["user"])
+        # updated_at(onupdate=func.now())도 같이 리프레시해야 한다 — climbing
+        # update_log 와 동일한 원인의 500 버그 (2026-07-19).
+        await self.session.refresh(comment, ["user", "updated_at"])
         # 메타 재주입 (응답용)
         comment.is_mine = comment.user_id == user_id
         comment.can_pin = True
