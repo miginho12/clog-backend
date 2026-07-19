@@ -18,6 +18,8 @@ from app.domain.auth.exceptions import (
     LocalLoginNotAvailable,
     NicknameAlreadyTaken,
     OAuthStateInvalid,
+    PasswordResetCodeInvalid,
+    PasswordResetTokenInvalid,
     RefreshTokenNotFound,
     RefreshTokenRevoked,
     UserNotFoundForAuth,
@@ -173,6 +175,26 @@ async def invalid_credentials_handler(
 ) -> JSONResponse:
     logger.info("invalid_credentials", path=request.url.path)
     return _error_response(401, "INVALID_CREDENTIALS", "인증 정보가 올바르지 않습니다")
+
+
+async def password_reset_code_invalid_handler(
+    request: Request, exc: PasswordResetCodeInvalid
+) -> JSONResponse:
+    logger.info("password_reset_code_invalid", path=request.url.path)
+    return _error_response(
+        400, "PASSWORD_RESET_CODE_INVALID", "코드가 올바르지 않거나 만료됐어요"
+    )
+
+
+async def password_reset_token_invalid_handler(
+    request: Request, exc: PasswordResetTokenInvalid
+) -> JSONResponse:
+    logger.info("password_reset_token_invalid", path=request.url.path)
+    return _error_response(
+        400,
+        "PASSWORD_RESET_TOKEN_INVALID",
+        "인증이 만료됐어요. 처음부터 다시 시도해 주세요",
+    )
 
 
 # ─────────────────────────────────────────
@@ -494,6 +516,12 @@ def register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(RefreshTokenNotFound, refresh_token_not_found_handler)
     app.add_exception_handler(RefreshTokenRevoked, refresh_token_revoked_handler)
     app.add_exception_handler(InvalidCredentials, invalid_credentials_handler)
+    app.add_exception_handler(
+        PasswordResetCodeInvalid, password_reset_code_invalid_handler
+    )
+    app.add_exception_handler(
+        PasswordResetTokenInvalid, password_reset_token_invalid_handler
+    )
     app.add_exception_handler(EmailAlreadyRegistered, email_already_registered_handler)
     app.add_exception_handler(NicknameAlreadyTaken, nickname_already_taken_handler)
     app.add_exception_handler(LocalLoginNotAvailable, local_login_not_available_handler)

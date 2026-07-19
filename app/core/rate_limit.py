@@ -81,6 +81,10 @@ class RateLimits:
     KAKAO_LOGIN = "10/minute"
     KAKAO_CALLBACK = "30/minute"
 
+    # 비밀번호 찾기 (메일 스팸/코드 무차별 대입 방지)
+    PASSWORD_RESET_REQUEST = "5/minute"
+    PASSWORD_RESET_VERIFY = "10/minute"
+
     # JWT 관련
     REFRESH = "30/minute"
     LOGOUT = "60/minute"

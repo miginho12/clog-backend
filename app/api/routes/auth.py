@@ -19,6 +19,11 @@ from app.core.rate_limit import RateLimits, limiter
 from app.domain.auth.dependencies import AuthServiceDep, KakaoOAuthServiceDep
 from app.domain.auth.local_schemas import (
     LocalLoginRequest,
+    PasswordResetConfirmSchema,
+    PasswordResetRequestResponse,
+    PasswordResetRequestSchema,
+    PasswordResetVerifyResponse,
+    PasswordResetVerifySchema,
     SignupRequest,
     SignupResponse,
 )
@@ -104,6 +109,64 @@ async def verify_email(
     """이메일 인증 토큰 처리 → JSON 결과 (프론트가 표시)."""
     ok = await service.verify_email(token)
     return {"verified": ok}
+
+
+# ─────────────────────────────────────────
+#  비밀번호 찾기
+# ─────────────────────────────────────────
+
+
+@router.post(
+    "/password-reset/request",
+    response_model=PasswordResetRequestResponse,
+    summary="비밀번호 재설정 코드 요청",
+    description=(
+        "가입된 이메일이면 6자리 코드를 메일로 발송. "
+        "계정 존재 여부를 노출하지 않기 위해 이메일이 없어도 동일하게 성공 응답."
+    ),
+)
+@limiter.limit(RateLimits.PASSWORD_RESET_REQUEST)
+async def request_password_reset(
+    request: Request,
+    payload: PasswordResetRequestSchema,
+    service: AuthServiceDep,
+) -> PasswordResetRequestResponse:
+    await service.request_password_reset(payload.email)
+    return PasswordResetRequestResponse()
+
+
+@router.post(
+    "/password-reset/verify",
+    response_model=PasswordResetVerifyResponse,
+    summary="비밀번호 재설정 코드 확인",
+    description="코드가 맞으면 다음 단계(새 비밀번호 설정)에 쓸 reset_token 발급.",
+)
+@limiter.limit(RateLimits.PASSWORD_RESET_VERIFY)
+async def verify_password_reset(
+    request: Request,
+    payload: PasswordResetVerifySchema,
+    service: AuthServiceDep,
+) -> PasswordResetVerifyResponse:
+    reset_token = await service.verify_password_reset_code(
+        email=payload.email, code=payload.code
+    )
+    return PasswordResetVerifyResponse(reset_token=reset_token)
+
+
+@router.post(
+    "/password-reset/confirm",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="새 비밀번호 설정",
+)
+@limiter.limit(RateLimits.PASSWORD_RESET_VERIFY)
+async def confirm_password_reset(
+    request: Request,
+    payload: PasswordResetConfirmSchema,
+    service: AuthServiceDep,
+) -> None:
+    await service.confirm_password_reset(
+        reset_token=payload.reset_token, new_password=payload.new_password
+    )
 
 
 # ─────────────────────────────────────────

@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.auth.email_verify_repository import EmailVerifyRepository
 from app.domain.auth.kakao_service import KakaoOAuthService
+from app.domain.auth.password_reset_repository import PasswordResetRepository
 from app.domain.auth.repository import RedisRefreshTokenRepository
 from app.domain.auth.service import AuthService
 from app.domain.auth.state_repository import OAuthStateRepository
@@ -71,6 +72,12 @@ def get_email_verify_repository(
     return EmailVerifyRepository(redis)
 
 
+def get_password_reset_repository(
+    redis: Annotated[Redis, Depends(get_redis_client)],
+) -> PasswordResetRepository:
+    return PasswordResetRepository(redis)
+
+
 # ─────────────────────────────────────────
 #  Kakao 클라이언트
 # ─────────────────────────────────────────
@@ -96,12 +103,16 @@ def get_auth_service(
     email_verify_repo: Annotated[
         EmailVerifyRepository, Depends(get_email_verify_repository)
     ],
+    password_reset_repo: Annotated[
+        PasswordResetRepository, Depends(get_password_reset_repository)
+    ],
 ) -> AuthService:
     return AuthService(
         session=session,
         refresh_repo=refresh_repo,
         user_repo=user_repo,
         email_verify_repo=email_verify_repo,
+        password_reset_repo=password_reset_repo,
     )
 
 

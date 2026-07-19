@@ -156,3 +156,20 @@ class AccountBanned(AuthDomainError):
     def __init__(self, user_id: str):
         self.user_id = user_id
         super().__init__(f"account is banned: {user_id}")
+
+
+# ─────────────────────────────────────────
+#  비밀번호 찾기 (프론트 리디자인 연동)
+# ─────────────────────────────────────────
+
+
+class PasswordResetCodeInvalid(AuthDomainError):
+    """비밀번호 재설정 코드가 틀렸거나 만료됨."""
+
+    pass
+
+
+class PasswordResetTokenInvalid(AuthDomainError):
+    """비밀번호 재설정 토큰이 없거나 만료됨 (코드 확인 단계부터 다시)."""
+
+    pass

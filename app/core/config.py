@@ -152,6 +152,10 @@ class Settings(BaseSettings):
     smtp_from_name: str = Field(default="Clog")
     # 이메일 인증 토큰 유효시간 (초). 기본 24시간
     email_verify_ttl_seconds: int = Field(default=86400)
+    # 비밀번호 찾기: 6자리 코드 유효시간 (초). 기본 3분(시안 카운트다운과 동일)
+    password_reset_code_ttl_seconds: int = Field(default=180)
+    # 비밀번호 찾기: 코드 확인 후 발급하는 재설정 토큰 유효시간 (초). 기본 10분
+    password_reset_token_ttl_seconds: int = Field(default=600)
 
     # ── MinIO (오브젝트 스토리지 / 미디어 업로드) ──
     # 내부: 백엔드가 presigned 발급/관리에 쓰는 클러스터 내부 엔드포인트

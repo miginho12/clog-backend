@@ -18,7 +18,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
-from app.core.email import send_verification_email
+from app.core.email import send_password_reset_email, send_verification_email
 from app.core.logging import get_logger
 from app.core.password import hash_password, verify_password
 from app.core.security import (
@@ -38,9 +38,12 @@ from app.domain.auth.exceptions import (
     InvalidCredentials,
     LocalLoginNotAvailable,
     NicknameAlreadyTaken,
+    PasswordResetCodeInvalid,
+    PasswordResetTokenInvalid,
     RefreshTokenNotFound,
     UserNotFoundForAuth,
 )
+from app.domain.auth.password_reset_repository import PasswordResetRepository
 from app.domain.auth.repository import RedisRefreshTokenRepository
 from app.domain.users.models import User
 from app.domain.users.repository import UserRepository
@@ -57,11 +60,13 @@ class AuthService:
         refresh_repo: RedisRefreshTokenRepository,
         user_repo: UserRepository,
         email_verify_repo: EmailVerifyRepository,
+        password_reset_repo: PasswordResetRepository,
     ):
         self.session = session
         self.refresh_repo = refresh_repo
         self.user_repo = user_repo
         self.email_verify_repo = email_verify_repo
+        self.password_reset_repo = password_reset_repo
 
     # ─────────────────────────────────────────
     #  자체 회원가입 (Day 17 ⭐)
@@ -158,6 +163,68 @@ class AuthService:
         await self.session.commit()
         logger.info("email_verified", user_id=str(user_id))
         return True
+
+    # ─────────────────────────────────────────
+    #  비밀번호 찾기
+    # ─────────────────────────────────────────
+
+    async def request_password_reset(self, email: str) -> None:
+        """비밀번호 재설정 코드 발급 + 메일 발송.
+
+        계정 존재 여부를 노출하지 않기 위해(계정 열거 방어) 이 메서드는
+        이메일이 없거나 OAuth 전용 계정이어도 예외를 던지지 않고 조용히
+        반환한다 — 호출부는 항상 같은 성공 메시지를 응답해야 한다.
+        메일 발송 실패도 signup 과 같은 원칙으로 로그만 남기고 삼킨다.
+        """
+        user = await self.user_repo.get_by_email(email)
+        if user is None or user.auth_provider != "local" or not user.password_hash:
+            logger.info("password_reset_request_noop", email=email)
+            return
+
+        code = await self.password_reset_repo.create_code(email)
+        try:
+            await send_password_reset_email(
+                to_email=email, nickname=user.nickname, code=code
+            )
+        except Exception as e:
+            logger.error(
+                "password_reset_email_failed", email=email, error=str(e)
+            )
+
+    async def verify_password_reset_code(self, *, email: str, code: str) -> str:
+        """코드 확인 → 통과하면 새 비밀번호 설정용 1회용 토큰 발급.
+
+        Raises:
+            PasswordResetCodeInvalid: 코드가 틀렸거나 만료됨
+        """
+        ok = await self.password_reset_repo.consume_code(email, code)
+        if not ok:
+            raise PasswordResetCodeInvalid(email)
+        return await self.password_reset_repo.create_reset_token(email)
+
+    async def confirm_password_reset(
+        self, *, reset_token: str, new_password: str
+    ) -> None:
+        """재설정 토큰 + 새 비밀번호 → 비밀번호 변경.
+
+        change_password(본인 인증 후 변경)와 달리 current_password 검증이
+        없다 — 대신 reset_token 자체가 "코드 확인을 마쳤다"는 증표.
+
+        Raises:
+            PasswordResetTokenInvalid: 토큰이 없거나 만료됨
+        """
+        email = await self.password_reset_repo.consume_reset_token(reset_token)
+        if email is None:
+            raise PasswordResetTokenInvalid()
+
+        user = await self.user_repo.get_by_email(email)
+        if user is None or user.auth_provider != "local":
+            # 코드 확인까지 통과했던 계정이 그 사이 사라지는 등 — 방어적 처리
+            raise PasswordResetTokenInvalid()
+
+        user.password_hash = hash_password(new_password)
+        await self.session.commit()
+        logger.info("password_reset_completed", user_id=str(user.id))
 
     # ─────────────────────────────────────────
     #  자체 로그인 (Day 17 ⭐)

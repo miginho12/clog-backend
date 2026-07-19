@@ -84,6 +84,7 @@ async def run(session: AsyncSession) -> None:
         refresh_repo=None,  # 차단 경로는 토큰 발급 전 거부 → 미사용
         user_repo=repo,
         email_verify_repo=None,
+        password_reset_repo=None,  # 이 검증에서는 미사용
     )
 
     admin = make_user("admin", is_admin=True)

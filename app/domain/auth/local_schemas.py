@@ -72,3 +72,49 @@ class LocalLoginRequest(BaseModel):
 
     email: EmailStr = Field(..., description="가입한 이메일")
     password: str = Field(..., min_length=1, description="비밀번호")
+
+
+# ─────────────────────────────────────────
+#  비밀번호 찾기
+# ─────────────────────────────────────────
+
+
+class PasswordResetRequestSchema(BaseModel):
+    """비밀번호 재설정 코드 요청."""
+
+    email: EmailStr
+
+
+class PasswordResetRequestResponse(BaseModel):
+    """계정 존재 여부를 노출하지 않기 위해 성공/실패 무관하게 동일 응답."""
+
+    message: str = "가입된 이메일이면 인증 코드를 보내드렸어요."
+
+
+class PasswordResetVerifySchema(BaseModel):
+    """비밀번호 재설정 코드 확인."""
+
+    email: EmailStr
+    code: str = Field(..., min_length=6, max_length=6)
+
+
+class PasswordResetVerifyResponse(BaseModel):
+    """코드 확인 성공 시 발급 — 다음 단계(새 비밀번호 설정)에 사용."""
+
+    reset_token: str
+
+
+class PasswordResetConfirmSchema(BaseModel):
+    """새 비밀번호 설정."""
+
+    reset_token: str
+    new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def _validate_new_password(cls, v: str) -> str:
+        try:
+            validate_password_policy(v)
+        except PasswordPolicyError as e:
+            raise ValueError("; ".join(e.reasons)) from e
+        return v

@@ -81,3 +81,65 @@ async def send_verification_email(
         start_tls=True,
     )
     logger.info("verification_email_sent", to=to_email)
+
+
+def _password_reset_html(nickname: str, code: str) -> str:
+    """비밀번호 재설정 코드 메일 HTML 본문 (새 브랜드 컬러 — 보라/코랄)."""
+    return f"""\
+<!DOCTYPE html>
+<html lang="ko">
+<body style="margin:0;padding:0;background:#F1ECFB;font-family:sans-serif;">
+  <div style="max-width:480px;margin:40px auto;background:#fff;border-radius:16px;overflow:hidden;">
+    <div style="background:linear-gradient(135deg,#7C5CD8,#E86A5C);padding:24px;text-align:center;">
+      <h1 style="color:#fff;margin:0;font-size:20px;">Clog</h1>
+    </div>
+    <div style="padding:32px 28px;">
+      <p style="font-size:15px;color:#3A3450;">
+        {nickname}님, 비밀번호 재설정을 요청하셨네요.
+      </p>
+      <p style="font-size:14px;color:#5C5478;line-height:1.6;">
+        아래 6자리 코드를 앱에 입력해 주세요.
+      </p>
+      <div style="text-align:center;margin:28px 0;">
+        <span style="display:inline-block;background:#F1ECFB;color:#7C5CD8;
+                     letter-spacing:6px;padding:14px 28px;border-radius:12px;
+                     font-size:26px;font-weight:800;">
+          {code}
+        </span>
+      </div>
+      <p style="font-size:12px;color:#9C93B5;line-height:1.5;">
+        이 코드는 3분 후 만료돼요. 본인이 요청하지 않았다면 무시하셔도 됩니다.
+      </p>
+    </div>
+  </div>
+</body>
+</html>"""
+
+
+async def send_password_reset_email(
+    *, to_email: str, nickname: str, code: str
+) -> None:
+    """비밀번호 재설정 코드 메일 발송. 실패 시 예외 전파."""
+    settings = get_settings()
+
+    msg = EmailMessage()
+    msg["From"] = f"{settings.smtp_from_name} <{settings.smtp_user}>"
+    msg["To"] = to_email
+    msg["Subject"] = "[Clog] 비밀번호 재설정 코드"
+    msg.set_content(
+        f"{nickname}님, 비밀번호 재설정 코드는 {code} 입니다.\n"
+        "이 코드는 3분 후 만료됩니다."
+    )
+    msg.add_alternative(
+        _password_reset_html(nickname, code), subtype="html"
+    )
+
+    await aiosmtplib.send(
+        msg,
+        hostname=settings.smtp_host,
+        port=settings.smtp_port,
+        username=settings.smtp_user,
+        password=settings.smtp_password,
+        start_tls=True,
+    )
+    logger.info("password_reset_email_sent", to=to_email)
