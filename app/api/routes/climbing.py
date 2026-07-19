@@ -21,6 +21,7 @@ from app.api.dependencies import CurrentUserDep, OptionalUserId
 from app.domain.climbing.dependencies import ClimbingServiceDep
 from app.domain.climbing.schemas import (
     SUGGESTED_CATEGORIES,
+    CategoryCount,
     ClimbingLogCreate,
     ClimbingLogListResponse,
     ClimbingLogResponse,
@@ -114,6 +115,23 @@ async def list_climbing_logs(
 )
 async def get_suggested_categories() -> list[str]:
     return SUGGESTED_CATEGORIES
+
+
+# ─────────────────────────────────────────
+#  인기 태그 집계 (검색 탭 발견용)
+# ─────────────────────────────────────────
+@router.get(
+    "/meta/categories/popular",
+    response_model=list[CategoryCount],
+    summary="사용 횟수 상위 인기 태그",
+    description="공개 계정의 공개 글 기준 태그 사용 횟수 집계. 비로그인도 조회 가능.",
+)
+async def get_popular_categories(
+    service: ClimbingServiceDep,
+    limit: int = Query(10, ge=1, le=30),
+) -> list[CategoryCount]:
+    rows = await service.get_popular_categories(limit=limit)
+    return [CategoryCount(tag=tag, count=count) for tag, count in rows]
 
 
 # ─────────────────────────────────────────

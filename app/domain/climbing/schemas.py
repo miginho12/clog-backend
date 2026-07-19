@@ -203,3 +203,10 @@ class ClimbingLogListResponse(BaseModel):
     page: int
     page_size: int
     has_next: bool
+
+
+class CategoryCount(BaseModel):
+    """인기 태그 집계 (검색 탭 발견용)."""
+
+    tag: str
+    count: int

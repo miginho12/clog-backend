@@ -164,6 +164,11 @@ class ClimbingService:
         await self._attach_comments(logs, viewer_id)
         return logs, has_next
 
+    async def get_popular_categories(
+        self, limit: int = 10
+    ) -> list[tuple[str, int]]:
+        return await self.repo.count_popular_categories(limit=limit)
+
     # ── 수정 (본인만) ──
 
     async def update_log(

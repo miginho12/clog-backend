@@ -6,7 +6,7 @@ users/repository.py 패턴 동일.
 
 from uuid import UUID
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -160,3 +160,32 @@ class ClimbingRepository:
 
         has_next = len(rows) > page_size
         return rows[:page_size], has_next
+
+    # ── 인기 태그 집계 (검색 탭 발견용) ──
+
+    async def count_popular_categories(
+        self, limit: int = 10
+    ) -> list[tuple[str, int]]:
+        """태그별 사용 횟수 상위 N개.
+
+        list_public_color_logs_for_gym 과 같은 원칙 — 뷰어 무관 전역 집계라
+        공개 계정의 공개 글만 센다(비공개 계정/글의 태그 사용량이 노출되지
+        않도록). categories 는 text[] 라 unnest 로 행을 펼친 뒤 GROUP BY.
+        """
+        tag = func.unnest(ClimbingLog.categories).label("tag")
+        stmt = (
+            select(tag, func.count().label("cnt"))
+            .select_from(ClimbingLog)
+            .join(User, ClimbingLog.user_id == User.id)
+            .where(
+                ClimbingLog.visibility == "public",
+                ClimbingLog.deleted_at.is_(None),
+                User.is_public.is_(True),
+                User.deleted_at.is_(None),
+            )
+            .group_by(tag)
+            .order_by(func.count().desc())
+            .limit(limit)
+        )
+        result = await self.session.execute(stmt)
+        return [(row.tag, row.cnt) for row in result]
