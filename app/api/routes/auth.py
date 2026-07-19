@@ -99,6 +99,16 @@ async def signup(
 
 
 @router.get(
+    "/check-email",
+    summary="이메일 중복 확인",
+    description="회원가입 폼의 실시간 중복 확인용. 비로그인도 조회 가능.",
+)
+async def check_email(email: str, service: AuthServiceDep) -> dict:
+    available = await service.check_email_available(email)
+    return {"available": available}
+
+
+@router.get(
     "/verify",
     summary="이메일 인증",
     description="인증 메일 토큰으로 이메일 인증. 프론트 /verify 페이지가 호출.",

@@ -164,6 +164,11 @@ class AuthService:
         logger.info("email_verified", user_id=str(user_id))
         return True
 
+    async def check_email_available(self, email: str) -> bool:
+        """회원가입 폼의 "중복 확인" 버튼용. 이미 가입된 이메일이면 False."""
+        existing = await self.user_repo.get_by_email(email)
+        return existing is None
+
     # ─────────────────────────────────────────
     #  비밀번호 찾기
     # ─────────────────────────────────────────
