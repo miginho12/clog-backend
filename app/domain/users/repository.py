@@ -48,37 +48,47 @@ class UserRepository:
     async def search_by_nickname(
         self,
         *,
-        query: str,
+        query: str = "",
         exclude_user_id: UUID | None = None,
         page: int = 1,
         page_size: int = 20,
     ) -> tuple[list[User], bool]:
         """닉네임 부분검색 (활성·미차단만). ilike 대소문자 무시.
 
+        query 가 빈 문자열이면 브라우즈 모드 — 검색어 필터 없이 전체
+        유저를 닉네임순으로 반환 (검색 탭 '클라이머' 필터에서 검색어
+        입력 전에도 목록을 보여주기 위함, 2026-07-20 QA).
+
         반환: (users, has_next). 탈퇴(deleted_at)·차단(is_banned)·본인 제외.
-        정렬: 접두 일치 우선(닉네임이 query 로 시작) → 닉네임 오름차순.
+        정렬: 검색어 있으면 접두 일치 우선(닉네임이 query 로 시작) → 닉네임
+        오름차순. 브라우즈 모드는 닉네임 오름차순만.
         """
         from sqlalchemy import case
 
-        pattern = f"%{query}%"
-        prefix = f"{query}%"
         conds = [
             User.deleted_at.is_(None),
             User.is_banned.is_(False),
-            User.nickname.ilike(pattern),
         ]
+        if query:
+            conds.append(User.nickname.ilike(f"%{query}%"))
         if exclude_user_id is not None:
             conds.append(User.id != exclude_user_id)
+
+        order = (
+            [
+                # 접두 일치(0)가 부분 일치(1)보다 먼저
+                case((User.nickname.ilike(f"{query}%"), 0), else_=1),
+                User.nickname.asc(),
+            ]
+            if query
+            else [User.nickname.asc()]
+        )
 
         offset = (page - 1) * page_size
         stmt = (
             select(User)
             .where(*conds)
-            .order_by(
-                # 접두 일치(0)가 부분 일치(1)보다 먼저
-                case((User.nickname.ilike(prefix), 0), else_=1),
-                User.nickname.asc(),
-            )
+            .order_by(*order)
             .offset(offset)
             .limit(page_size + 1)
         )

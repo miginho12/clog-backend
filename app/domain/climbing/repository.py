@@ -180,6 +180,12 @@ class ClimbingRepository:
             .where(
                 ClimbingLog.visibility == "public",
                 ClimbingLog.deleted_at.is_(None),
+                # list_feed 와 동일 원칙 — 트랜스코딩 안 끝난(processing/failed)
+                # 영상 게시물은 아직 피드에 안 보이니 태그 집계에도 넣지 않는다.
+                or_(
+                    ClimbingLog.media_status.is_(None),
+                    ClimbingLog.media_status == "done",
+                ),
                 User.is_public.is_(True),
                 User.deleted_at.is_(None),
             )

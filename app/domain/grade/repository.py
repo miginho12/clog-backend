@@ -9,7 +9,7 @@ from collections.abc import Iterable
 from datetime import date
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -115,6 +115,19 @@ class GradeRepository:
 
     # ── 점수 계산용 본인 기록 조회 (구현 2~) ──
 
+    @staticmethod
+    def _media_visible():
+        """영상 트랜스코딩 완료(done) 또는 미디어 없음/이미지(null)만 —
+        processing/failed 는 피드에도 안 뜨는 게시물이라 점수·완등수
+        집계에서도 제외해야 한다 (list_feed 의 동일 필터와 정합성 유지).
+        2026-07-20 QA: 업로드 직후 점수가 먼저 올라갔다가 트랜스코딩
+        실패 시 되돌릴 방법이 없던 문제 — 애초에 집계하지 않도록 수정.
+        """
+        return or_(
+            ClimbingLog.media_status.is_(None),
+            ClimbingLog.media_status == "done",
+        )
+
     async def list_user_logs_for_grading(
         self, user_id: UUID, grade_system: str = "v_scale"
     ) -> list[ClimbingLog]:
@@ -130,6 +143,7 @@ class GradeRepository:
                 ClimbingLog.user_id == user_id,
                 ClimbingLog.grade_system == grade_system,
                 ClimbingLog.deleted_at.is_(None),
+                self._media_visible(),
             )
         )
         return list(result.scalars().all())
@@ -155,6 +169,7 @@ class GradeRepository:
             ClimbingLog.grade_system == "color",
             ClimbingLog.visibility == "public",
             ClimbingLog.deleted_at.is_(None),
+            self._media_visible(),
             User.is_public.is_(True),
             User.deleted_at.is_(None),
         ]
@@ -180,6 +195,7 @@ class GradeRepository:
                 ClimbingLog.user_id == user_id,
                 ClimbingLog.is_success.is_(True),
                 ClimbingLog.deleted_at.is_(None),
+                self._media_visible(),
             )
         )
         return int(result.scalar_one())
@@ -192,6 +208,7 @@ class GradeRepository:
             .where(
                 ClimbingLog.user_id == user_id,
                 ClimbingLog.deleted_at.is_(None),
+                self._media_visible(),
             )
         )
         return int(result.scalar_one())

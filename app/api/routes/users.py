@@ -95,14 +95,14 @@ async def delete_me(
 @router.get(
     "/search",
     response_model=UserSearchResponse,
-    summary="닉네임으로 사용자 검색",
+    summary="닉네임으로 사용자 검색 (검색어 없으면 전체 브라우즈)",
 )
 @limiter.limit(RateLimits.USERS_SEARCH)
 async def search_users(
     request: Request,
     service: UserServiceDep,
     viewer_id: OptionalUserId,
-    q: str = Query(..., min_length=1, max_length=50, description="닉네임 검색어"),
+    q: str = Query("", max_length=50, description="닉네임 검색어 (없으면 전체 목록)"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=50),
 ) -> UserSearchResponse:
