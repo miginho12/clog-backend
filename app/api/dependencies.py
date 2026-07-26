@@ -12,7 +12,7 @@ HTTP 요청 → Authorization 헤더 → JWT 검증 → User 객체 반환
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.core.logging import get_logger
@@ -34,6 +34,7 @@ bearer_scheme = HTTPBearer(auto_error=False)
 
 
 async def get_current_user(
+    request: Request,
     credentials: Annotated[
         HTTPAuthorizationCredentials | None, Depends(bearer_scheme)
     ],
@@ -46,6 +47,11 @@ async def get_current_user(
     2. JWT 서명 + 만료 → 401 if 실패
     3. 토큰 종류 = access → 401 if refresh
     4. user_id → User 조회 → 401 if 없음 (삭제됨)
+
+    검증 통과 시 request.state.user_id 를 채운다 — rate_limit._key_func 가
+    인증된 사용자는 IP 대신 user_id 로 제한하기 위해 참조하는 값
+    (2026-07-27: 이 값을 아무도 채우지 않아 인증 요청도 항상 IP 키로
+    떨어지던 버그를 수정).
 
     Raises:
         HTTPException(401): 위 어떤 단계든 실패 시
@@ -87,6 +93,9 @@ async def get_current_user(
             detail="invalid token subject",
         ) from None
 
+    # 서명 검증을 통과한 시점 = 신원 확정 → rate limit 키를 user_id 기반으로 전환
+    request.state.user_id = str(user_id)
+
     user = await user_repo.get_by_id_active(user_id)
     if user is None:
         # 토큰은 유효한데 사용자가 삭제됨
@@ -120,6 +129,7 @@ _optional_bearer = HTTPBearer(auto_error=False)
 
 
 async def get_optional_user_id(
+    request: Request,
     credentials: Annotated[
         HTTPAuthorizationCredentials | None, Depends(_optional_bearer)
     ],
@@ -133,10 +143,13 @@ async def get_optional_user_id(
         return None
     try:
         payload = decode_access_token(credentials.credentials)
-        return UUID(payload.sub)
+        user_id = UUID(payload.sub)
     except (TokenExpired, InvalidToken, WrongTokenType, ValueError):
         # 토큰이 있지만 유효하지 않으면 비로그인 취급
         return None
+    # get_current_user 와 동일: rate limit 키를 user_id 기반으로 전환
+    request.state.user_id = str(user_id)
+    return user_id
 
 
 # 짧은 사용을 위한 타입 alias

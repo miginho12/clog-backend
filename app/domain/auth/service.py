@@ -50,6 +50,13 @@ from app.domain.users.repository import UserRepository
 
 logger = get_logger(__name__)
 
+# 계정 열거 방어(타이밍 사이드채널, 2026-07-27 보안 QA): local_login 에서
+# 이메일이 없거나 OAuth 전용 계정이어도, 실제 비밀번호 계정과 비슷한
+# 시간이 걸리도록 이 더미 해시에 대해 bcrypt 검증을 한 번 수행한다.
+# 모듈 로드 시 1회만 생성(매 요청마다 새로 만들 필요 없음 — 실제 값은
+# 중요하지 않고 "bcrypt 한 번 태우는 것" 자체가 목적).
+_DUMMY_PASSWORD_HASH = hash_password("dummy-password-never-used-A1!")
+
 
 class AuthService:
     """인증 도메인 서비스."""
@@ -244,24 +251,29 @@ class AuthService:
         - 이메일 없음 / OAuth 전용 계정 / 비밀번호 불일치를 모두
           동일한 LocalLoginNotAvailable 로 처리 → 공격자가 계정 존재
           여부를 알 수 없음.
+        - 타이밍 사이드채널 방어(2026-07-27 보안 QA): 에러 메시지는
+          같아도 이메일이 없거나 OAuth 전용 계정이면 bcrypt 검증
+          자체를 건너뛰어 응답이 눈에 띄게 빨랐다 — 이 시간 차이로
+          가입된 이메일인지 추정 가능했다. 그 두 경우에도 더미 해시로
+          bcrypt 를 한 번 태워 실제 비밀번호 계정과 시간을 맞춘다.
 
         Raises:
             LocalLoginNotAvailable: 위 어떤 경우든 (단일 메시지)
         """
         user = await self.user_repo.get_by_email(email)
 
-        # 이메일 없음 → 동일 예외 (계정 존재 숨김)
-        if user is None:
-            logger.info("local_login_failed_no_user", email=email)
-            raise LocalLoginNotAvailable("invalid email or password")
-
-        # OAuth 전용 계정 (password_hash 없음) → 동일 예외
-        if user.password_hash is None:
-            logger.info(
-                "local_login_failed_oauth_only",
-                email=email,
-                provider=user.auth_provider,
-            )
+        if user is None or user.password_hash is None:
+            # 이메일 없음 / OAuth 전용 계정 → 실제 비밀번호 계정과 동일하게
+            # bcrypt 를 한 번 태운 뒤(결과는 버림) 동일한 예외로 거부
+            verify_password(password, _DUMMY_PASSWORD_HASH)
+            if user is None:
+                logger.info("local_login_failed_no_user", email=email)
+            else:
+                logger.info(
+                    "local_login_failed_oauth_only",
+                    email=email,
+                    provider=user.auth_provider,
+                )
             raise LocalLoginNotAvailable("invalid email or password")
 
         # 비밀번호 불일치 → 동일 예외

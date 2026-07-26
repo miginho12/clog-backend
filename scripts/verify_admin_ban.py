@@ -19,6 +19,7 @@ import uuid
 from fastapi import HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.requests import Request
 
 import app.infra.db.models  # noqa: F401 — 전체 모델 로드(FK 참조 등록)
 from app.api.dependencies import get_current_user
@@ -66,6 +67,11 @@ def make_user(
 
 def bearer(token: str) -> HTTPAuthorizationCredentials:
     return HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
+
+
+def make_request() -> Request:
+    """get_current_user 가 요구하는 최소한의 Request (rate limit 키 설정용)."""
+    return Request(scope={"type": "http", "headers": [], "method": "GET", "path": "/"})
 
 
 async def expect(coro, exc_type: type[Exception], name: str) -> None:
@@ -116,7 +122,9 @@ async def run(session: AsyncSession) -> None:
     await users.set_ban(user_id=normal.id, banned=True, actor_id=admin.id)
     banned_token = create_access_token(str(normal.id))
     try:
-        await get_current_user(credentials=bearer(banned_token), user_repo=repo)
+        await get_current_user(
+            make_request(), credentials=bearer(banned_token), user_repo=repo
+        )
         check("차단 사용자 토큰 → 403 거부", False)
     except HTTPException as e:
         check("차단 사용자 토큰 → 403 거부", e.status_code == 403)
@@ -125,7 +133,9 @@ async def run(session: AsyncSession) -> None:
     session.add(active)
     await session.flush()
     ok_token = create_access_token(str(active.id))
-    got = await get_current_user(credentials=bearer(ok_token), user_repo=repo)
+    got = await get_current_user(
+        make_request(), credentials=bearer(ok_token), user_repo=repo
+    )
     check("미차단 사용자 토큰 → 정상 통과", got.id == active.id)
 
     # ── 로그인 차단 ─────────────────────────────────────────

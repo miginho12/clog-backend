@@ -11,6 +11,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import Settings, get_settings
 from app.core.logging import get_logger
 from app.domain.climbing.exceptions import (
     ClimbingLogForbidden,
@@ -22,6 +23,7 @@ from app.domain.climbing.schemas import CommentPreview
 from app.domain.comment_likes.repository import CommentLikeRepository
 from app.domain.comments.repository import CommentRepository
 from app.domain.likes.repository import LikeRepository
+from app.domain.media.service import MediaError, MediaService
 
 logger = get_logger(__name__)
 
@@ -34,12 +36,18 @@ class ClimbingService:
         like_repo: LikeRepository,
         comment_repo: CommentRepository,
         comment_like_repo: CommentLikeRepository,
+        media_service: MediaService | None = None,
+        settings: Settings | None = None,
     ):
         self.session = session
         self.repo = repository
         self.like_repo = like_repo
         self.comment_repo = comment_repo
         self.comment_like_repo = comment_like_repo
+        settings = settings or get_settings()
+        self.settings = settings
+        # internal=True: 클러스터 내부 엔드포인트로 stat/delete (서버 사이드 전용 작업)
+        self.media_service = media_service or MediaService(settings, internal=True)
 
     async def _attach_likes(
         self, logs: list[ClimbingLog], viewer_id: UUID | None
@@ -108,13 +116,20 @@ class ClimbingService:
     # ── 작성 ──
 
     async def create_log(self, *, user_id: UUID, data: dict) -> ClimbingLog:
+        media_type = data.get("media_type")
+        media_url = data.get("media_url")
+        if media_type in ("image", "video") and media_url:
+            await self._enforce_media_size_limit(
+                media_type=media_type, media_url=media_url
+            )
+
         # 영상이면 트랜스코딩 파이프라인 진입:
         #   원본을 original_media_url 로 보관, media_url 은 압축 완료까지 None,
         #   media_status=processing (피드에서 숨김). 워커가 압축 후 done 전환.
-        if data.get("media_type") == "video" and data.get("media_url"):
+        if media_type == "video" and media_url:
             data = {
                 **data,
-                "original_media_url": data["media_url"],
+                "original_media_url": media_url,
                 "media_url": None,
                 "media_status": "processing",
             }
@@ -129,6 +144,47 @@ class ClimbingService:
             "climbing_log_created", log_id=str(log.id), user_id=str(user_id)
         )
         return log
+
+    async def _enforce_media_size_limit(
+        self, *, media_type: str, media_url: str
+    ) -> None:
+        """업로드된 미디어의 실제 용량이 상한을 넘으면 객체를 지우고 거부.
+
+        presigned PUT 은 자체적으로 업로드 용량 조건을 걸 수 없어(그건
+        presigned POST policy 여야 가능) media_max_image_bytes/
+        media_max_video_bytes 설정이 그동안 강제되지 않고 있었다.
+        트랜스코딩 워커가 지나치게 큰 영상을 받아 OOM 나던 사고(2026-07-20)의
+        재발을 막기 위해, 기록 생성 시점에 사후 검증한다.
+
+        Raises:
+            MediaError: 용량 초과 시 (400)
+        """
+        object_key = self.media_service.extract_object_key(media_url)
+        if object_key is None:
+            # 우리 버킷 URL 형식이 아니면 검사 대상 아님
+            return
+        size = self.media_service.get_object_size(object_key)
+        if size is None:
+            # 이미 없는 객체 등 — 이후 단계에서 자연히 실패하도록 둔다
+            return
+        limit = (
+            self.settings.media_max_image_bytes
+            if media_type == "image"
+            else self.settings.media_max_video_bytes
+        )
+        if size > limit:
+            self.media_service.delete_object(object_key)
+            logger.warning(
+                "media_size_limit_exceeded",
+                media_type=media_type,
+                size=size,
+                limit=limit,
+            )
+            raise MediaError(
+                "media_too_large",
+                f"파일 용량이 허용 한도({limit // (1024 * 1024)}MB)를 초과했습니다",
+                {"size": size, "limit": limit},
+            )
 
     # ── 단건 조회 (공개 범위 권한) ──
 

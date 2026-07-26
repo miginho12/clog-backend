@@ -5,6 +5,7 @@ from collections.abc import Iterator
 from datetime import timedelta
 
 from minio import Minio
+from minio.error import S3Error
 
 from app.core.config import Settings
 
@@ -98,6 +99,19 @@ class MediaService:
     def delete_object(self, object_key: str) -> None:
         """단일 객체 삭제 (멱등 — 없는 키여도 에러 안 냄)."""
         self._client.remove_object(self._bucket, object_key)
+
+    def get_object_size(self, object_key: str) -> int | None:
+        """객체의 실제 업로드 용량(bytes) 조회.
+
+        presigned PUT 은 자체적으로 업로드 용량 상한을 걸 수 없어(그건
+        presigned POST policy 여야 가능), 로그 생성 시점에 사후 검증하는
+        용도로 쓴다. 객체가 없으면 None(호출부가 알아서 처리).
+        """
+        try:
+            stat = self._client.stat_object(self._bucket, object_key)
+        except S3Error:
+            return None
+        return stat.size
 
     def download_to_file(self, object_key: str, dest_path: str) -> None:
         """MinIO 객체를 로컬 파일로 다운로드 (트랜스코딩 소스용)."""

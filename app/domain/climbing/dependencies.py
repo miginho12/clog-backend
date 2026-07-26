@@ -5,11 +5,13 @@ from typing import Annotated
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import Settings, get_settings
 from app.domain.climbing.repository import ClimbingRepository
 from app.domain.climbing.service import ClimbingService
 from app.domain.comment_likes.repository import CommentLikeRepository
 from app.domain.comments.repository import CommentRepository
 from app.domain.likes.repository import LikeRepository
+from app.domain.media.service import MediaService
 from app.infra.db import get_session
 
 
@@ -22,6 +24,7 @@ def get_climbing_repository(
 def get_climbing_service(
     session: Annotated[AsyncSession, Depends(get_session)],
     repository: Annotated[ClimbingRepository, Depends(get_climbing_repository)],
+    settings: Annotated[Settings, Depends(get_settings)],
 ) -> ClimbingService:
     return ClimbingService(
         session=session,
@@ -29,6 +32,8 @@ def get_climbing_service(
         like_repo=LikeRepository(session),
         comment_repo=CommentRepository(session),
         comment_like_repo=CommentLikeRepository(session),
+        media_service=MediaService(settings, internal=True),
+        settings=settings,
     )
 
 
