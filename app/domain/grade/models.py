@@ -18,7 +18,7 @@ GymGradeSystem — 짐별 색 난이도 순서 정의.
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, String, func, text
+from sqlalchemy import Boolean, DateTime, Float, String, func, text
 from sqlalchemy.dialects.postgresql import ARRAY, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -62,6 +62,20 @@ class GymGradeSystem(Base):
         default=False,
         server_default=text("false"),
         comment="시스템 시드(true) / 사용자 등록(false)",
+    )
+
+    difficulty_offset: Mapped[float] = mapped_column(
+        Float,
+        nullable=False,
+        default=0.0,
+        server_default=text("0"),
+        comment=(
+            "암장 간 난이도 환산(ratio 투영) 보정치. 같은 색 단계라도 암장마다 "
+            "체감 난이도가 달라서(예: 을지로 최상급이 다른 암장 중급 수준) "
+            "관리자가 실제 경험으로 조정. 양수=이 암장이 실제로 더 어려움 "
+            "(정규화 시 ratio를 올림), 음수=더 쉬움. 2026-07-27 QA-#5, "
+            "기본값 0(보정 없음, 기존 동작과 동일)."
+        ),
     )
 
     created_by: Mapped[uuid.UUID | None] = mapped_column(

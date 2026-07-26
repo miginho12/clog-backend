@@ -30,7 +30,14 @@ class ColorGrade(BaseModel):
     """color 트랙 산정 결과 (ADR-041, ADR-042).
 
     difficulty 는 각 기록의 '자기 짐 내 비율(ratio)' 로 정해지므로
-    종합점수는 기준짐과 무관. base_gym 은 탑레이팅 색 라벨 투영에만 사용.
+    종합점수는 기준짐과 무관.
+
+    base_gym / top_rating_label 의 의미는 요청 시 base_gym 지정 여부로 갈린다
+    (2026-07-27 QA 수정):
+    - base_gym 을 명시(그레이드 탭 암장별 환산 목록 등): 그 암장 기준으로
+      top_ratio 를 투영한 "환산" 색 라벨.
+    - base_gym 미지정(기본/프로필 최고등급): 실제로 완등한 기록 중 가장
+      어려웠던 것의 원본 암장·색 그대로 — 투영 아님, 실제 기록.
     """
 
     comprehensive_score: float
@@ -90,6 +97,15 @@ class GymGradeSystemCreate(BaseModel):
         default=False,
         description="공식 암장 여부 — admin 만 True 로 등록 가능 (일반 사용자는 무시)",
     )
+    difficulty_offset: float = Field(
+        default=0.0,
+        ge=-0.5,
+        le=0.5,
+        description=(
+            "암장 간 환산 보정치 — admin만 0이 아닌 값 설정 가능(일반 사용자는 무시). "
+            "양수=실제로 더 어려운 암장, 음수=더 쉬운 암장"
+        ),
+    )
 
     @field_validator("gym_name")
     @classmethod
@@ -125,6 +141,12 @@ class GymGradeSystemUpdate(BaseModel):
         examples=["피커스"],
         description="브랜드/체인 이름 (선택, 비우면 소속 브랜드 없음)",
     )
+    difficulty_offset: float = Field(
+        default=0.0,
+        ge=-0.5,
+        le=0.5,
+        description="암장 간 환산 보정치 — admin만 반영(일반 사용자는 기존값 유지)",
+    )
 
     @field_validator("brand_name")
     @classmethod
@@ -150,6 +172,7 @@ class GymGradeSystemResponse(BaseModel):
     brand_name: str | None
     color_order: list[str]
     is_official: bool
+    difficulty_offset: float
     created_by: UUID | None
     created_at: datetime
     updated_at: datetime

@@ -79,6 +79,7 @@ class GradeRepository:
         created_by: UUID | None,
         is_official: bool = False,
         brand_name: str | None = None,
+        difficulty_offset: float = 0.0,
     ) -> GymGradeSystem:
         system = GymGradeSystem(
             gym_name=gym_name,
@@ -86,6 +87,7 @@ class GradeRepository:
             is_official=is_official,
             created_by=created_by,
             brand_name=brand_name,
+            difficulty_offset=difficulty_offset,
         )
         self.session.add(system)
         await self.session.flush()
@@ -96,15 +98,17 @@ class GradeRepository:
         system: GymGradeSystem,
         color_order: list[str],
         brand_name: str | None = None,
+        difficulty_offset: float = 0.0,
     ) -> GymGradeSystem:
-        """color_order + brand_name 갱신. gym_name 은 불변(기록 매칭 키).
+        """color_order + brand_name + difficulty_offset 갱신. gym_name 은
+        불변(기록 매칭 키).
 
-        color_order 와 마찬가지로 brand_name 도 항상 전체 교체(요청에 실린
-        값 그대로 반영) — 수정 폼이 항상 현재값을 채워서 보내므로 부분
-        패치를 지원할 필요 없음.
+        전부 항상 전체 교체(요청에 실린 값 그대로 반영) — 수정 폼이 항상
+        현재값을 채워서 보내므로 부분 패치를 지원할 필요 없음.
         """
         system.color_order = color_order
         system.brand_name = brand_name
+        system.difficulty_offset = difficulty_offset
         await self.session.flush()
         return system
 
@@ -243,3 +247,21 @@ class GradeRepository:
         idx = int(ratio * (n - 1) + 0.5)
         idx = max(0, min(idx, n - 1))
         return system.color_order[idx]
+
+    @staticmethod
+    def normalize_ratio(system: GymGradeSystem, ratio: float) -> float:
+        """이 짐의 자기 ratio를 관리자가 설정한 difficulty_offset으로 보정해
+        "실제 체감 난이도" 기준 정규화 ratio로 바꾼다 (2026-07-27 QA-#5).
+
+        암장 간 환산(ratio_to_color 투영)에서만 쓴다 — 점수 집계나 실제
+        완등 기록 표시(QA-#4)에는 적용하지 않는다(그건 있는 그대로가 맞음).
+        offset이 양수(실제로 더 어려운 암장)면 정규화 ratio를 올려서, 다른
+        (더 쉬운) 암장으로 투영할 때 더 높은 색이 나오게 한다.
+        """
+        return max(0.0, min(1.0, ratio + system.difficulty_offset))
+
+    @staticmethod
+    def denormalize_ratio(system: GymGradeSystem, normalized_ratio: float) -> float:
+        """normalize_ratio의 역 — 정규화 ratio를 특정 짐 자기 ratio로 되돌린다
+        (그 짐 자신의 difficulty_offset을 제거)."""
+        return max(0.0, min(1.0, normalized_ratio - system.difficulty_offset))

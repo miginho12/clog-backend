@@ -487,9 +487,9 @@ class GradeService:
         successes: list[tuple[float, int, date]] = []
         failures: list[tuple[float, int, date]] = []
         gym_counter: Counter[str] = Counter()
-        success_ratios: list[float] = []
-        # (ratio, attempts, climbed_at) — 진척도용 (ADR-050)
-        success_details: list[tuple[float, int, date]] = []
+        # (ratio, attempts, climbed_at, gym_name, grade_raw) — 진척도(ADR-050) +
+        # 실제 최고 완등 기록 원본 추적 + 암장별 환산(difficulty_offset) 계산용
+        success_details: list[tuple[float, int, date, str, str]] = []
         for log in logs:
             system = systems.get(log.gym_name) if log.gym_name else None
             if system is None:
@@ -501,8 +501,9 @@ class GradeService:
             entry = (color_difficulty(ratio), log.attempts, log.climbed_at)
             if log.is_success:
                 successes.append(entry)
-                success_ratios.append(ratio)
-                success_details.append((ratio, log.attempts, log.climbed_at))
+                success_details.append(
+                    (ratio, log.attempts, log.climbed_at, log.gym_name, log.grade_raw)
+                )
             else:
                 failures.append(entry)
             gym_counter[log.gym_name] += 1
@@ -512,13 +513,36 @@ class GradeService:
         )
         comprehensive_score = display_score(raw_score)
 
+        # 실제로 완등한 기록 중 ratio 최대인 것 하나 (동률이면 최근 것).
+        # base_gym 미지정 시(기본/프로필 최고등급) 이 기록의 원본 암장·색을
+        # 그대로 쓴다.
+        best_success = (
+            max(success_details, key=lambda d: (d[0], d[2]))
+            if success_details
+            else None
+        )
+
+        # base_gym 명시 시(그레이드 탭 암장별 환산 목록 등): 그 암장 기준으로
+        # top_ratio 를 투영(ratio_to_color) — 기존 동작 유지.
+        # base_gym 미지정(기본/프로필 최고등급): "실제로 완등한 최고 기록"의
+        # 원본 암장·색을 그대로 쓴다. 예전엔 이 경우에도 "가장 자주 기록한
+        # 암장"을 골라 거기에 top_ratio 를 투영했는데, 그 암장에서 실제로
+        # 딴 적 없는 색이 "최고 등급"으로 표시되는 문제가 있었다
+        # (예: 다른 암장에서 딴 최고색의 ratio가 우연히 손상원에서 보라 위치와
+        # 맞아떨어지면 "손상원 보라"로 잘못 표시됨). 최고 등급은 추천/환산이
+        # 아니라 실제 기록이어야 하므로 투영하지 않는다.
         if base_gym is not None:
             resolved_base_gym: str | None = base_gym
             base_system = explicit_base_system
+        elif best_success is not None:
+            resolved_base_gym = best_success[3]
+            base_system = systems.get(resolved_base_gym)
         else:
             resolved_base_gym = None
             base_system = None
             if gym_counter:
+                # 완등 기록이 없으면(전부 시도만) 표시할 최고 등급도 없으므로
+                # base_gym 은 그냥 가장 자주 기록한 암장으로(제목 표시용).
                 resolved_base_gym = sorted(
                     gym_counter.items(), key=lambda kv: (-kv[1], kv[0])
                 )[0][0]
@@ -527,11 +551,26 @@ class GradeService:
         top_rating_label: str | None = None
         next_grade_label: str | None = None
         readiness_pct: float | None = None
-        if success_ratios and base_system is not None:
-            top_ratio = max(success_ratios)
+        if base_gym is not None and success_details and base_system is not None:
+            # 각 완등 기록을 "자기 짐" 기준으로 정규화(difficulty_offset 보정)한
+            # 뒤 최댓값을 찾고, 그걸 기준짐 자기 ratio로 되돌려 투영한다.
+            # 예전엔 gym별 실제 난이도차 없이 순수 ratio만 비교했는데, 이제
+            # 관리자가 설정한 보정치를 반영해 더 현실적으로 환산한다.
+            normalized = [
+                self.repo.normalize_ratio(systems[gym], ratio)
+                for ratio, _att, _climbed, gym, _grade in success_details
+            ]
+            top_normalized = max(normalized)
+            top_ratio = self.repo.denormalize_ratio(base_system, top_normalized)
             top_rating_label = self.repo.ratio_to_color(base_system, top_ratio)
+        elif base_gym is None and best_success is not None and base_system is not None:
+            # 위에서 고른 실제 최고 완등 기록의 원본 색 그대로 (투영 없음)
+            top_ratio = best_success[0]
+            top_rating_label = best_success[4]
 
-            # 다음 등급 진척도 (ADR-050)
+        if top_rating_label is not None and base_system is not None:
+            # 다음 등급 진척도 (ADR-050) — 이 등급도 top_rating_label과 같은
+            # (실제이든 투영이든) 기준짐의 체계를 그대로 따른다.
             order = base_system.color_order
             n = len(order)
             top_rank = order.index(top_rating_label)
@@ -542,7 +581,7 @@ class GradeService:
                 # 갈색 1개 + 보라 20개인 사람은 검정 준비가 된 것이 아니다.
                 top_logs = [
                     (att, climbed)
-                    for r, att, climbed in success_details
+                    for r, att, climbed, _gym, _grade in success_details
                     if abs(r - top_ratio) < 1e-9
                 ]
                 readiness_pct = compute_readiness(
@@ -686,6 +725,7 @@ class GradeService:
         is_admin: bool = False,
         is_official: bool = False,
         brand_name: str | None = None,
+        difficulty_offset: float = 0.0,
     ) -> GymGradeSystem:
         """짐 색체계 등록.
 
@@ -696,19 +736,25 @@ class GradeService:
         gym_name 은 지점 단위(예: "피커스 종로")로 등록하고, brand_name 으로
         같은 브랜드 지점을 묶는다(예: "피커스"). brand_name 은 선택.
 
+        difficulty_offset: 암장 간 환산(투영) 보정치. is_official 과 동일하게
+        admin 만 0이 아닌 값 지정 가능 — 일반 사용자가 자기 암장을 "더
+        어렵다"고 자체 신고하는 걸 막는다 (2026-07-27 QA-#5).
+
         gym_name 중복이면 GymGradeSystemAlreadyExists(409).
         """
         existing = await self.repo.get_by_gym_name(gym_name)
         if existing is not None:
             raise GymGradeSystemAlreadyExists(gym_name)
-        # 공식 등록은 admin 만 — 비admin 이 is_official=True 보내도 무시
+        # 공식 등록/난이도 보정은 admin 만 — 비admin 이 보내도 무시
         official = is_official and is_admin
+        offset = difficulty_offset if is_admin else 0.0
         system = await self.repo.create(
             gym_name=gym_name,
             color_order=color_order,
             created_by=user_id,
             is_official=official,
             brand_name=brand_name,
+            difficulty_offset=offset,
         )
         await self.session.commit()
         await self.session.refresh(system)  # commit 후 expire 방지 (응답 직렬화용)
@@ -723,10 +769,14 @@ class GradeService:
         user_id: UUID,
         is_admin: bool = False,
         brand_name: str | None = None,
+        difficulty_offset: float = 0.0,
     ) -> GymGradeSystem:
-        """color_order + brand_name 수정.
+        """color_order + brand_name + difficulty_offset 수정.
 
-        일반 사용자: 본인 등록분(비공식)만. admin: 공식·타인 등록분 포함 전체.
+        일반 사용자: 본인 등록분(비공식)만, difficulty_offset 은 기존 값
+        그대로 유지(비admin이 보낸 값은 무시 — 0으로 덮어쓰면 admin이
+        미리 설정해둔 보정치가 본인이 색 순서만 고쳐도 날아가버림).
+        admin: 공식·타인 등록분 포함 전체 + difficulty_offset 설정 가능.
         """
         system = await self.repo.get_by_id(system_id)
         if system is None:
@@ -735,8 +785,9 @@ class GradeService:
             system.is_official or system.created_by != user_id
         ):
             raise GymGradeSystemForbidden(str(system_id))
+        offset = difficulty_offset if is_admin else system.difficulty_offset
         updated = await self.repo.update_color_order(
-            system, color_order, brand_name=brand_name
+            system, color_order, brand_name=brand_name, difficulty_offset=offset
         )
         await self.session.commit()
         await self.session.refresh(updated)  # commit 후 expire 방지 (응답 직렬화용)

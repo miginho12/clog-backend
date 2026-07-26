@@ -49,6 +49,7 @@ async def create_gym_system(
         is_admin=user.is_admin,
         is_official=payload.is_official,
         brand_name=payload.brand_name,
+        difficulty_offset=payload.difficulty_offset,
     )
     return GymGradeSystemResponse.model_validate(system)
 
@@ -123,6 +124,7 @@ async def update_gym_system(
         user_id=user.id,
         is_admin=user.is_admin,
         brand_name=payload.brand_name,
+        difficulty_offset=payload.difficulty_offset,
     )
     return GymGradeSystemResponse.model_validate(system)
 
