@@ -3,6 +3,7 @@
 import uuid
 from collections.abc import Iterator
 from datetime import timedelta
+from typing import Any
 
 from minio import Minio
 from minio.error import S3Error
@@ -24,7 +25,7 @@ ALLOWED_CONTENT_TYPES: dict[str, tuple[str, str]] = {
 class MediaError(Exception):
     """미디어 업로드 도메인 예외 (400 매핑)."""
 
-    def __init__(self, code: str, message: str, details: dict | None = None):
+    def __init__(self, code: str, message: str, details: dict[str, Any] | None = None):
         self.code = code
         self.message = message
         self.details = details or {}
@@ -56,7 +57,7 @@ class MediaService:
 
     def create_presigned_upload(
         self, *, user_id: str, content_type: str
-    ) -> dict:
+    ) -> dict[str, Any]:
         """업로드용 presigned PUT URL 발급.
 
         반환: {upload_url, object_key, public_url, category}

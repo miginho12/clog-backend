@@ -86,4 +86,4 @@ class PasswordResetRepository:
             return None
         await self.redis.delete(key)
         logger.debug("password_reset_token_consumed", token_prefix=token[:10])
-        return email
+        return str(email)

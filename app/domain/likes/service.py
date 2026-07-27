@@ -5,6 +5,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
+from app.domain.climbing.models import ClimbingLog
 from app.domain.climbing.repository import ClimbingRepository
 from app.domain.likes.exceptions import LikeTargetNotFound
 from app.domain.likes.repository import LikeRepository
@@ -28,7 +29,7 @@ class LikeService:
 
     async def _assert_visible_target(
         self, *, log_id: UUID, viewer_id: UUID
-    ):
+    ) -> ClimbingLog:
         """좋아요 대상 게시물이 존재하고 볼 수 있는지 검증 후 log 반환.
 
         - 없거나 soft-deleted → NotFound

@@ -9,7 +9,7 @@ from collections.abc import Iterable
 from datetime import date
 from uuid import UUID
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import ColumnElement, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -120,7 +120,7 @@ class GradeRepository:
     # ── 점수 계산용 본인 기록 조회 (구현 2~) ──
 
     @staticmethod
-    def _media_visible():
+    def _media_visible() -> ColumnElement[bool]:
         """영상 트랜스코딩 완료(done) 또는 미디어 없음/이미지(null)만 —
         processing/failed 는 피드에도 안 뜨는 게시물이라 점수·완등수
         집계에서도 제외해야 한다 (list_feed 의 동일 필터와 정합성 유지).

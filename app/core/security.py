@@ -21,6 +21,7 @@ from enum import StrEnum
 from typing import Any
 
 from jose import JWTError, jwt
+from jose.exceptions import ExpiredSignatureError
 from pydantic import BaseModel
 
 from app.core.config import get_settings
@@ -209,7 +210,7 @@ def decode_token(token: str, expected_type: TokenType) -> TokenPayload:
             # 발급자 검증 (선택, 안전성 ↑)
             issuer=settings.jwt_issuer,
         )
-    except jwt.ExpiredSignatureError as e:
+    except ExpiredSignatureError as e:
         raise TokenExpired("token has expired") from e
     except JWTError as e:
         # 서명 불일치, 형식 오류, issuer 불일치 등

@@ -1,8 +1,10 @@
 """User Repository."""
 
+from typing import Any
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import ColumnElement, func, select
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.users.models import User
@@ -65,7 +67,7 @@ class UserRepository:
         """
         from sqlalchemy import case
 
-        conds = [
+        conds: list[ColumnElement[bool]] = [
             User.deleted_at.is_(None),
             User.is_banned.is_(False),
         ]
@@ -185,7 +187,7 @@ class UserRepository:
         await self.session.flush()
         return user
 
-    async def update(self, user: User, **fields) -> User:
+    async def update(self, user: User, **fields: Any) -> User:
         for key, value in fields.items():
             if hasattr(user, key) and value is not None:
                 setattr(user, key, value)
@@ -215,6 +217,7 @@ class UserRepository:
             )
         )
         await self.session.flush()
+        assert isinstance(result, CursorResult)  # delete() 는 항상 CursorResult
         return result.rowcount or 0
 
     async def anonymize_and_soft_delete(self, user: User) -> User:

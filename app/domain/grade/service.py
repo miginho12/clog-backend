@@ -11,8 +11,10 @@ import math
 import re
 from collections import Counter, defaultdict
 from datetime import UTC, date, datetime, timedelta
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
+
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.climbing.models import ClimbingLog
 from app.domain.grade.exceptions import (
@@ -123,7 +125,8 @@ def compute_contribution(
     """
     success_weight = 1.0 if is_success else 0.3
     elapsed_days = max(0, (today - climbed_at).days)
-    time_weight = 0.5 ** (elapsed_days / 60)
+    # math.pow 사용: 0.5 ** float 는 typeshed 상 복소수 가능성 때문에 Any 반환
+    time_weight = math.pow(0.5, elapsed_days / 60)
     a = attempts if (attempts and attempts > 0) else 1
     efficiency = 1.0 / (1 + math.log(a))
     return difficulty * success_weight * time_weight * efficiency
@@ -182,7 +185,7 @@ def compute_readiness(
         return None
 
     accumulated = sum(
-        top_difficulty * (0.5 ** (max(0, (today - climbed).days) / 60))
+        top_difficulty * math.pow(0.5, max(0, (today - climbed).days) / 60)
         for _, climbed in top_grade_logs
     )
     return min(100.0, accumulated / next_difficulty * 100)
@@ -282,9 +285,9 @@ def month_date_range(year: int, month: int) -> tuple[date, date]:
 
 
 class GradeService:
-    def __init__(self, repo: GradeRepository, session=None):
+    def __init__(self, repo: GradeRepository, session: AsyncSession):
         self.repo = repo
-        # 쓰기 트랜잭션 커밋용 (get_session 은 자동 커밋 안 함). 산정은 읽기라 불필요.
+        # 쓰기 트랜잭션 커밋용 (get_session 은 자동 커밋 안 함).
         self.session = session
 
     # ── 산정 (구현 2~5) ──
@@ -345,7 +348,7 @@ class GradeService:
 
     async def compute_grade_timeline(
         self, user_id: UUID, weeks: int = 12
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         """주별 종합 그레이드 점수 추이 (v_scale + color 통합).
 
         v_scale·color 두 트랙 로그를 하나의 난이도 스케일로 합쳐
@@ -402,7 +405,7 @@ class GradeService:
             )
 
         today = datetime.now(UTC).date()
-        points: list[dict] = []
+        points: list[dict[str, Any]] = []
         for i in range(weeks):
             snapshot = today - timedelta(weeks=(weeks - 1 - i))
 
@@ -431,7 +434,7 @@ class GradeService:
             )
         return points
 
-    async def compute_profile_stats(self, user_id: UUID) -> dict:
+    async def compute_profile_stats(self, user_id: UUID) -> dict[str, Any]:
         """프로필용 클라이머 통계 요약.
 
         - success_count: 총 완등 수
@@ -491,7 +494,10 @@ class GradeService:
         # 실제 최고 완등 기록 원본 추적 + 암장별 환산(difficulty_offset) 계산용
         success_details: list[tuple[float, int, date, str, str]] = []
         for log in logs:
-            system = systems.get(log.gym_name) if log.gym_name else None
+            gym_name = log.gym_name
+            if not gym_name:
+                continue
+            system = systems.get(gym_name)
             if system is None:
                 continue
             rank = self.repo.color_to_rank(system, log.grade_raw)
@@ -502,11 +508,11 @@ class GradeService:
             if log.is_success:
                 successes.append(entry)
                 success_details.append(
-                    (ratio, log.attempts, log.climbed_at, log.gym_name, log.grade_raw)
+                    (ratio, log.attempts, log.climbed_at, gym_name, log.grade_raw)
                 )
             else:
                 failures.append(entry)
-            gym_counter[log.gym_name] += 1
+            gym_counter[gym_name] += 1
 
         raw_score, counted = aggregate_score(
             successes=successes, failures=failures, today=today

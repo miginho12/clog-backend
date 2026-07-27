@@ -32,6 +32,10 @@ class Comment(Base):
     """게시물 댓글."""
 
     __tablename__ = "comments"
+    # 아래 is_mine 등은 DB 컬럼이 아니라 CommentService._attach_meta 가 응답
+    # 조립 시 동적으로 주입하는 뷰 전용 필드라, Mapped[] 매핑 없이 타입만
+    # 선언한다(__allow_unmapped__ 로 SQLAlchemy 에 비매핑임을 알림).
+    __allow_unmapped__ = True
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -81,3 +85,10 @@ class Comment(Base):
 
     # 작성자 relationship (author 표시용 — selectinload eager load)
     user: Mapped[User] = relationship(lazy="raise")
+
+    # ── 뷰 전용 동적 필드 (DB 컬럼 아님, CommentService._attach_meta 가 주입) ──
+    is_mine: bool
+    can_pin: bool
+    reply_count: int
+    like_count: int
+    liked_by_me: bool

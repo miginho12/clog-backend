@@ -9,6 +9,7 @@
 """
 
 import uuid
+from typing import Any
 
 import structlog
 from arq.connections import RedisSettings
@@ -28,7 +29,7 @@ from app.infra.db.engine import close_engine, init_engine
 logger = structlog.get_logger()
 
 
-async def transcode_video(ctx: dict, log_id: str) -> None:
+async def transcode_video(ctx: dict[str, Any], log_id: str) -> None:
     """영상 트랜스코딩 태스크 (ARQ 가 큐에서 꺼내 실행)."""
     settings = get_settings()
     sm = get_sessionmaker()
@@ -45,12 +46,12 @@ async def transcode_video(ctx: dict, log_id: str) -> None:
         await service.transcode(uuid.UUID(log_id))
 
 
-async def on_startup(ctx: dict) -> None:
+async def on_startup(ctx: dict[str, Any]) -> None:
     init_engine()
     logger.info("worker_started")
 
 
-async def on_shutdown(ctx: dict) -> None:
+async def on_shutdown(ctx: dict[str, Any]) -> None:
     await close_engine()
     logger.info("worker_stopped")
 

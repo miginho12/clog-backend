@@ -5,6 +5,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
+from app.domain.climbing.models import ClimbingLog
 from app.domain.climbing.repository import ClimbingRepository
 from app.domain.comment_likes.repository import CommentLikeRepository
 from app.domain.comments.exceptions import (
@@ -35,7 +36,9 @@ class CommentService:
         self.climbing_repo = climbing_repo
         self.like_repo = like_repo
 
-    async def _get_visible_log(self, *, log_id: UUID, viewer_id: UUID | None):
+    async def _get_visible_log(
+        self, *, log_id: UUID, viewer_id: UUID | None
+    ) -> ClimbingLog:
         """대상 게시물이 존재하고 볼 수 있는지 검증 후 반환."""
         log = await self.climbing_repo.get_by_id(log_id)
         if log is None:
@@ -68,7 +71,7 @@ class CommentService:
 
     async def list_comments(
         self, *, log_id: UUID, viewer_id: UUID | None
-    ) -> tuple[list[Comment], list[Comment], int, dict]:
+    ) -> tuple[list[Comment], list[Comment], int, dict[UUID, int]]:
         """게시물 댓글 목록.
 
         반환: (최상위 리스트, 대댓글 리스트, 전체 수, {parent_id: reply_count})
@@ -96,7 +99,9 @@ class CommentService:
         for r in replies:
             # 대댓글의 부모가 대댓글이면(2depth+) 최상위로 귀속시키는 정규화는
             # 데이터가 1depth 로만 생성되므로 parent_id 그대로 사용
-            reply_counts[r.parent_id] = reply_counts.get(r.parent_id, 0) + 1
+            parent_id = r.parent_id
+            assert parent_id is not None  # replies 필터(parent_id is not None)로 보장됨
+            reply_counts[parent_id] = reply_counts.get(parent_id, 0) + 1
 
         self._attach_meta(
             tops,

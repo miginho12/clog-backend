@@ -2,6 +2,7 @@
 
 import contextlib
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -44,7 +45,7 @@ class CommentResponse(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def _map_user_to_author(cls, data):
+    def _map_user_to_author(cls, data: Any) -> Any:
         if isinstance(data, dict):
             return data
         user = getattr(data, "user", None)

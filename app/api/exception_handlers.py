@@ -1,5 +1,8 @@
 """전역 예외 핸들러."""
 
+from collections.abc import Awaitable, Callable
+from typing import Any
+
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
@@ -65,11 +68,27 @@ from app.domain.users.exceptions import (
 logger = get_logger(__name__)
 
 
-def _error_response(status_code: int, code: str, message: str, **extra) -> JSONResponse:
-    body = {"error": {"code": code, "message": message}}
+def _error_response(status_code: int, code: str, message: str, **extra: Any) -> JSONResponse:
+    body: dict[str, Any] = {"error": {"code": code, "message": message}}
     if extra:
         body["error"]["details"] = extra
     return JSONResponse(status_code=status_code, content=body)
+
+
+def _register[ExcT: Exception](
+    app: FastAPI,
+    exc_class: type[ExcT],
+    handler: Callable[[Request, ExcT], Awaitable[JSONResponse]],
+) -> None:
+    """도메인 예외 핸들러 등록.
+
+    Starlette 의 add_exception_handler 스텁은 Callable[[Request, Exception], ...]
+    만 받아, 여기서처럼 좁힌 예외 타입(exc: SpecificException)의 핸들러를 넘기면
+    mypy 가 반공변성 위반으로 본다. 실제로는 Starlette 가 등록된 클래스로 정확히
+    매칭해 디스패치하므로 런타임엔 안전 — ignore 를 이 한 곳에만 몰아둔다.
+    (exc_class 와 handler 의 ExcT 는 여기서 여전히 타입 체크된다.)
+    """
+    app.add_exception_handler(exc_class, handler)  # type: ignore[arg-type]
 
 
 # ─────────────────────────────────────────
@@ -77,37 +96,37 @@ def _error_response(status_code: int, code: str, message: str, **extra) -> JSONR
 # ─────────────────────────────────────────
 
 
-async def email_already_exists_handler(
-    request: Request, exc: EmailAlreadyExists
-) -> JSONResponse:
+async def email_already_exists_handler(request: Request, exc: EmailAlreadyExists) -> JSONResponse:
     logger.info("email_already_exists", email=exc.email, path=request.url.path)
-    return _error_response(409, "EMAIL_ALREADY_EXISTS", "이미 사용 중인 이메일입니다", email=exc.email)
+    return _error_response(
+        409, "EMAIL_ALREADY_EXISTS", "이미 사용 중인 이메일입니다", email=exc.email
+    )
 
 
 async def nickname_already_exists_handler(
     request: Request, exc: NicknameAlreadyExists
 ) -> JSONResponse:
     logger.info("nickname_already_exists", nickname=exc.nickname, path=request.url.path)
-    return _error_response(409, "NICKNAME_ALREADY_EXISTS", "이미 사용 중인 닉네임입니다", nickname=exc.nickname)
+    return _error_response(
+        409, "NICKNAME_ALREADY_EXISTS", "이미 사용 중인 닉네임입니다", nickname=exc.nickname
+    )
 
 
 async def oauth_identity_already_exists_handler(
     request: Request, exc: OAuthIdentityAlreadyExists
 ) -> JSONResponse:
     logger.info("oauth_identity_exists", provider=exc.provider, path=request.url.path)
-    return _error_response(409, "OAUTH_IDENTITY_ALREADY_EXISTS", "이미 가입된 OAuth 계정입니다", provider=exc.provider)
+    return _error_response(
+        409, "OAUTH_IDENTITY_ALREADY_EXISTS", "이미 가입된 OAuth 계정입니다", provider=exc.provider
+    )
 
 
-async def user_not_found_handler(
-    request: Request, exc: UserNotFound
-) -> JSONResponse:
+async def user_not_found_handler(request: Request, exc: UserNotFound) -> JSONResponse:
     logger.info("user_not_found", user_id=exc.user_id, path=request.url.path)
     return _error_response(404, "USER_NOT_FOUND", "사용자를 찾을 수 없습니다")
 
 
-async def user_already_deleted_handler(
-    request: Request, exc: UserAlreadyDeleted
-) -> JSONResponse:
+async def user_already_deleted_handler(request: Request, exc: UserAlreadyDeleted) -> JSONResponse:
     logger.info("user_already_deleted", user_id=exc.user_id, path=request.url.path)
     return _error_response(410, "USER_ALREADY_DELETED", "이미 삭제된 사용자입니다")
 
@@ -115,9 +134,7 @@ async def user_already_deleted_handler(
 # ⭐ Day 14 - 권한 예외
 
 
-async def user_profile_private_handler(
-    request: Request, exc: UserProfilePrivate
-) -> JSONResponse:
+async def user_profile_private_handler(request: Request, exc: UserProfilePrivate) -> JSONResponse:
     """비공개 프로필 조회 시도 → 403."""
     logger.info("user_profile_private", user_id=exc.user_id, path=request.url.path)
     return _error_response(
@@ -127,9 +144,7 @@ async def user_profile_private_handler(
     )
 
 
-async def user_update_forbidden_handler(
-    request: Request, exc: UserUpdateForbidden
-) -> JSONResponse:
+async def user_update_forbidden_handler(request: Request, exc: UserUpdateForbidden) -> JSONResponse:
     """본인 아닌 사용자 수정 시도 → 403."""
     logger.warning(
         "user_update_forbidden",
@@ -163,16 +178,12 @@ async def refresh_token_not_found_handler(
     return _error_response(401, "INVALID_REFRESH_TOKEN", "유효하지 않은 refresh token 입니다")
 
 
-async def refresh_token_revoked_handler(
-    request: Request, exc: RefreshTokenRevoked
-) -> JSONResponse:
+async def refresh_token_revoked_handler(request: Request, exc: RefreshTokenRevoked) -> JSONResponse:
     logger.info("refresh_token_revoked", path=request.url.path)
     return _error_response(401, "REFRESH_TOKEN_REVOKED", "무효화된 refresh token 입니다")
 
 
-async def invalid_credentials_handler(
-    request: Request, exc: InvalidCredentials
-) -> JSONResponse:
+async def invalid_credentials_handler(request: Request, exc: InvalidCredentials) -> JSONResponse:
     logger.info("invalid_credentials", path=request.url.path)
     return _error_response(401, "INVALID_CREDENTIALS", "인증 정보가 올바르지 않습니다")
 
@@ -181,9 +192,7 @@ async def password_reset_code_invalid_handler(
     request: Request, exc: PasswordResetCodeInvalid
 ) -> JSONResponse:
     logger.info("password_reset_code_invalid", path=request.url.path)
-    return _error_response(
-        400, "PASSWORD_RESET_CODE_INVALID", "코드가 올바르지 않거나 만료됐어요"
-    )
+    return _error_response(400, "PASSWORD_RESET_CODE_INVALID", "코드가 올바르지 않거나 만료됐어요")
 
 
 async def password_reset_token_invalid_handler(
@@ -202,9 +211,7 @@ async def password_reset_token_invalid_handler(
 # ─────────────────────────────────────────
 
 
-async def oauth_state_invalid_handler(
-    request: Request, exc: OAuthStateInvalid
-) -> JSONResponse:
+async def oauth_state_invalid_handler(request: Request, exc: OAuthStateInvalid) -> JSONResponse:
     logger.warning("oauth_state_invalid", path=request.url.path)
     return _error_response(
         401,
@@ -217,12 +224,12 @@ async def kakao_token_exchange_failed_handler(
     request: Request, exc: KakaoTokenExchangeFailed
 ) -> JSONResponse:
     logger.warning("kakao_token_exchange_failed", kakao_error=exc.error, path=request.url.path)
-    return _error_response(400, "KAKAO_TOKEN_EXCHANGE_FAILED", "카카오 인증에 실패했습니다. 다시 시도해주세요.")
+    return _error_response(
+        400, "KAKAO_TOKEN_EXCHANGE_FAILED", "카카오 인증에 실패했습니다. 다시 시도해주세요."
+    )
 
 
-async def email_not_verified_handler(
-    request: Request, exc: EmailNotVerified
-) -> JSONResponse:
+async def email_not_verified_handler(request: Request, exc: EmailNotVerified) -> JSONResponse:
     return _error_response(
         403,
         "EMAIL_NOT_VERIFIED",
@@ -234,7 +241,9 @@ async def kakao_user_info_failed_handler(
     request: Request, exc: KakaoUserInfoFailed
 ) -> JSONResponse:
     logger.warning("kakao_user_info_failed", kakao_error=exc.error, path=request.url.path)
-    return _error_response(502, "KAKAO_USER_INFO_FAILED", "카카오 사용자 정보를 가져오지 못했습니다.")
+    return _error_response(
+        502, "KAKAO_USER_INFO_FAILED", "카카오 사용자 정보를 가져오지 못했습니다."
+    )
 
 
 async def kakao_email_not_available_handler(
@@ -248,9 +257,7 @@ async def kakao_email_not_available_handler(
     )
 
 
-async def kakao_api_error_handler(
-    request: Request, exc: KakaoAPIError
-) -> JSONResponse:
+async def kakao_api_error_handler(request: Request, exc: KakaoAPIError) -> JSONResponse:
     logger.error("kakao_api_error", error=str(exc), path=request.url.path)
     return _error_response(502, "KAKAO_API_ERROR", "카카오 서비스와의 통신에 문제가 발생했습니다.")
 
@@ -260,9 +267,7 @@ async def kakao_api_error_handler(
 # ─────────────────────────────────────────
 
 
-async def rate_limit_exceeded_handler(
-    request: Request, exc: RateLimitExceeded
-) -> JSONResponse:
+async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
     """Rate limit 초과 → 429.
 
     slowapi 의 기본 핸들러를 우리 응답 형식에 맞춤.
@@ -319,9 +324,7 @@ async def local_login_not_available_handler(
     )
 
 
-async def account_banned_handler(
-    request: Request, exc: AccountBanned
-) -> JSONResponse:
+async def account_banned_handler(request: Request, exc: AccountBanned) -> JSONResponse:
     return _error_response(
         status_code=status.HTTP_403_FORBIDDEN,
         code="account_banned",
@@ -329,9 +332,7 @@ async def account_banned_handler(
     )
 
 
-async def cannot_ban_self_handler(
-    request: Request, exc: CannotBanSelf
-) -> JSONResponse:
+async def cannot_ban_self_handler(request: Request, exc: CannotBanSelf) -> JSONResponse:
     return _error_response(
         status_code=status.HTTP_400_BAD_REQUEST,
         code="cannot_ban_self",
@@ -419,13 +420,13 @@ async def media_error_handler(request: Request, exc: MediaError) -> JSONResponse
     return _error_response(400, exc.code, exc.message, **exc.details)
 
 
-async def like_target_not_found_handler(
-    request: Request, exc: LikeTargetNotFound
-) -> JSONResponse:
+async def like_target_not_found_handler(request: Request, exc: LikeTargetNotFound) -> JSONResponse:
     return _error_response(404, "LIKE_TARGET_NOT_FOUND", "좋아요 대상 게시물을 찾을 수 없습니다")
 
 
-async def comment_target_not_found_handler(request: Request, exc: CommentTargetNotFound) -> JSONResponse:
+async def comment_target_not_found_handler(
+    request: Request, exc: CommentTargetNotFound
+) -> JSONResponse:
     return _error_response(404, "COMMENT_TARGET_NOT_FOUND", "댓글 대상 게시물을 찾을 수 없습니다")
 
 
@@ -437,17 +438,21 @@ async def comment_forbidden_handler(request: Request, exc: CommentForbidden) -> 
     return _error_response(403, "COMMENT_FORBIDDEN", "본인의 댓글만 수정/삭제할 수 있습니다")
 
 
-async def comment_parent_invalid_handler(request: Request, exc: CommentParentInvalid) -> JSONResponse:
+async def comment_parent_invalid_handler(
+    request: Request, exc: CommentParentInvalid
+) -> JSONResponse:
     return _error_response(400, "COMMENT_PARENT_INVALID", "유효하지 않은 부모 댓글입니다")
 
 
-async def comment_like_target_not_found_handler(request: Request, exc: CommentLikeTargetNotFound) -> JSONResponse:
-    return _error_response(404, "COMMENT_LIKE_TARGET_NOT_FOUND", "좋아요 대상 댓글을 찾을 수 없습니다")
-
-
-async def cannot_follow_self_handler(
-    request: Request, exc: CannotFollowSelf
+async def comment_like_target_not_found_handler(
+    request: Request, exc: CommentLikeTargetNotFound
 ) -> JSONResponse:
+    return _error_response(
+        404, "COMMENT_LIKE_TARGET_NOT_FOUND", "좋아요 대상 댓글을 찾을 수 없습니다"
+    )
+
+
+async def cannot_follow_self_handler(request: Request, exc: CannotFollowSelf) -> JSONResponse:
     return _error_response(400, "CANNOT_FOLLOW_SELF", "자기 자신은 팔로우할 수 없습니다")
 
 
@@ -485,9 +490,7 @@ async def current_password_mismatch_handler(
     )
 
 
-async def password_policy_error_handler(
-    request: Request, exc: PasswordPolicyError
-) -> JSONResponse:
+async def password_policy_error_handler(request: Request, exc: PasswordPolicyError) -> JSONResponse:
     logger.info("password_policy_error", path=request.url.path)
     return _error_response(
         400,
@@ -499,61 +502,57 @@ async def password_policy_error_handler(
 
 def register_exception_handlers(app: FastAPI) -> None:
     # User 도메인
-    app.add_exception_handler(EmailAlreadyExists, email_already_exists_handler)
-    app.add_exception_handler(NicknameAlreadyExists, nickname_already_exists_handler)
-    app.add_exception_handler(OAuthIdentityAlreadyExists, oauth_identity_already_exists_handler)
-    app.add_exception_handler(UserNotFound, user_not_found_handler)
-    app.add_exception_handler(UserAlreadyDeleted, user_already_deleted_handler)
+    _register(app, EmailAlreadyExists, email_already_exists_handler)
+    _register(app, NicknameAlreadyExists, nickname_already_exists_handler)
+    _register(app, OAuthIdentityAlreadyExists, oauth_identity_already_exists_handler)
+    _register(app, UserNotFound, user_not_found_handler)
+    _register(app, UserAlreadyDeleted, user_already_deleted_handler)
     # ⭐ Day 14
-    app.add_exception_handler(UserProfilePrivate, user_profile_private_handler)
-    app.add_exception_handler(UserUpdateForbidden, user_update_forbidden_handler)
-    app.add_exception_handler(PasswordChangeNotAllowed, password_change_not_allowed_handler)
-    app.add_exception_handler(CurrentPasswordMismatch, current_password_mismatch_handler)
-    app.add_exception_handler(PasswordPolicyError, password_policy_error_handler)
+    _register(app, UserProfilePrivate, user_profile_private_handler)
+    _register(app, UserUpdateForbidden, user_update_forbidden_handler)
+    _register(app, PasswordChangeNotAllowed, password_change_not_allowed_handler)
+    _register(app, CurrentPasswordMismatch, current_password_mismatch_handler)
+    _register(app, PasswordPolicyError, password_policy_error_handler)
 
     # Auth 도메인 (Day 11)
-    app.add_exception_handler(UserNotFoundForAuth, user_not_found_for_auth_handler)
-    app.add_exception_handler(RefreshTokenNotFound, refresh_token_not_found_handler)
-    app.add_exception_handler(RefreshTokenRevoked, refresh_token_revoked_handler)
-    app.add_exception_handler(InvalidCredentials, invalid_credentials_handler)
-    app.add_exception_handler(
-        PasswordResetCodeInvalid, password_reset_code_invalid_handler
-    )
-    app.add_exception_handler(
-        PasswordResetTokenInvalid, password_reset_token_invalid_handler
-    )
-    app.add_exception_handler(EmailAlreadyRegistered, email_already_registered_handler)
-    app.add_exception_handler(NicknameAlreadyTaken, nickname_already_taken_handler)
-    app.add_exception_handler(LocalLoginNotAvailable, local_login_not_available_handler)
-    app.add_exception_handler(EmailNotVerified, email_not_verified_handler)
-    app.add_exception_handler(AccountBanned, account_banned_handler)
-    app.add_exception_handler(CannotBanSelf, cannot_ban_self_handler)
-    app.add_exception_handler(ClimbingLogNotFound, climbing_log_not_found_handler)
-    app.add_exception_handler(ClimbingLogForbidden, climbing_log_forbidden_handler)
-    app.add_exception_handler(LikeTargetNotFound, like_target_not_found_handler)
-    app.add_exception_handler(CommentTargetNotFound, comment_target_not_found_handler)
-    app.add_exception_handler(CommentNotFound, comment_not_found_handler)
-    app.add_exception_handler(CommentForbidden, comment_forbidden_handler)
-    app.add_exception_handler(CommentParentInvalid, comment_parent_invalid_handler)
-    app.add_exception_handler(CommentLikeTargetNotFound, comment_like_target_not_found_handler)
-    app.add_exception_handler(CannotFollowSelf, cannot_follow_self_handler)
-    app.add_exception_handler(FollowTargetNotFound, follow_target_not_found_handler)
-    app.add_exception_handler(FollowRequestNotFound, follow_request_not_found_handler)
-    app.add_exception_handler(MediaError, media_error_handler)
+    _register(app, UserNotFoundForAuth, user_not_found_for_auth_handler)
+    _register(app, RefreshTokenNotFound, refresh_token_not_found_handler)
+    _register(app, RefreshTokenRevoked, refresh_token_revoked_handler)
+    _register(app, InvalidCredentials, invalid_credentials_handler)
+    _register(app, PasswordResetCodeInvalid, password_reset_code_invalid_handler)
+    _register(app, PasswordResetTokenInvalid, password_reset_token_invalid_handler)
+    _register(app, EmailAlreadyRegistered, email_already_registered_handler)
+    _register(app, NicknameAlreadyTaken, nickname_already_taken_handler)
+    _register(app, LocalLoginNotAvailable, local_login_not_available_handler)
+    _register(app, EmailNotVerified, email_not_verified_handler)
+    _register(app, AccountBanned, account_banned_handler)
+    _register(app, CannotBanSelf, cannot_ban_self_handler)
+    _register(app, ClimbingLogNotFound, climbing_log_not_found_handler)
+    _register(app, ClimbingLogForbidden, climbing_log_forbidden_handler)
+    _register(app, LikeTargetNotFound, like_target_not_found_handler)
+    _register(app, CommentTargetNotFound, comment_target_not_found_handler)
+    _register(app, CommentNotFound, comment_not_found_handler)
+    _register(app, CommentForbidden, comment_forbidden_handler)
+    _register(app, CommentParentInvalid, comment_parent_invalid_handler)
+    _register(app, CommentLikeTargetNotFound, comment_like_target_not_found_handler)
+    _register(app, CannotFollowSelf, cannot_follow_self_handler)
+    _register(app, FollowTargetNotFound, follow_target_not_found_handler)
+    _register(app, FollowRequestNotFound, follow_request_not_found_handler)
+    _register(app, MediaError, media_error_handler)
 
     # Grade 도메인 (구현 5)
-    app.add_exception_handler(GymGradeSystemNotFound, gym_grade_system_not_found_handler)
-    app.add_exception_handler(GymGradeSystemAlreadyExists, gym_grade_system_already_exists_handler)
-    app.add_exception_handler(GymGradeSystemNotFoundById, gym_grade_system_not_found_by_id_handler)
-    app.add_exception_handler(GymGradeSystemForbidden, gym_grade_system_forbidden_handler)
-    app.add_exception_handler(InvalidRankingPeriod, invalid_ranking_period_handler)
+    _register(app, GymGradeSystemNotFound, gym_grade_system_not_found_handler)
+    _register(app, GymGradeSystemAlreadyExists, gym_grade_system_already_exists_handler)
+    _register(app, GymGradeSystemNotFoundById, gym_grade_system_not_found_by_id_handler)
+    _register(app, GymGradeSystemForbidden, gym_grade_system_forbidden_handler)
+    _register(app, InvalidRankingPeriod, invalid_ranking_period_handler)
 
     # Kakao OAuth (Day 12)
-    app.add_exception_handler(OAuthStateInvalid, oauth_state_invalid_handler)
-    app.add_exception_handler(KakaoTokenExchangeFailed, kakao_token_exchange_failed_handler)
-    app.add_exception_handler(KakaoUserInfoFailed, kakao_user_info_failed_handler)
-    app.add_exception_handler(KakaoEmailNotAvailable, kakao_email_not_available_handler)
-    app.add_exception_handler(KakaoAPIError, kakao_api_error_handler)
+    _register(app, OAuthStateInvalid, oauth_state_invalid_handler)
+    _register(app, KakaoTokenExchangeFailed, kakao_token_exchange_failed_handler)
+    _register(app, KakaoUserInfoFailed, kakao_user_info_failed_handler)
+    _register(app, KakaoEmailNotAvailable, kakao_email_not_available_handler)
+    _register(app, KakaoAPIError, kakao_api_error_handler)
 
     # Rate Limit (Day 14 ⭐)
-    app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
+    _register(app, RateLimitExceeded, rate_limit_exceeded_handler)

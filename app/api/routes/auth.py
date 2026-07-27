@@ -103,7 +103,7 @@ async def signup(
     summary="이메일 중복 확인",
     description="회원가입 폼의 실시간 중복 확인용. 비로그인도 조회 가능.",
 )
-async def check_email(email: str, service: AuthServiceDep) -> dict:
+async def check_email(email: str, service: AuthServiceDep) -> dict[str, bool]:
     available = await service.check_email_available(email)
     return {"available": available}
 
@@ -115,7 +115,7 @@ async def check_email(email: str, service: AuthServiceDep) -> dict:
 )
 async def verify_email(
     token: str, service: AuthServiceDep
-) -> dict:
+) -> dict[str, bool]:
     """이메일 인증 토큰 처리 → JSON 결과 (프론트가 표시)."""
     ok = await service.verify_email(token)
     return {"verified": ok}

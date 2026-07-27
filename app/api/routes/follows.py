@@ -20,6 +20,8 @@ from app.domain.follows.schemas import (
     FollowToggleResponse,
     FollowUserItem,
 )
+from app.domain.follows.service import FollowService
+from app.domain.users.models import User
 
 router = APIRouter(prefix="/users", tags=["follows"])
 
@@ -69,7 +71,7 @@ async def unfollow_user(
 async def count_my_follow_requests(
     user: CurrentUserDep,
     service: FollowServiceDep,
-) -> dict:
+) -> dict[str, int]:
     n = await service.repo.count_pending_requests(user_id=user.id)
     return {"count": n}
 
@@ -166,9 +168,11 @@ async def list_following(
     return await _build_list(service, viewer_id, users)
 
 
-async def _build_list(service, viewer_id, users) -> FollowListResponse:
+async def _build_list(
+    service: FollowService, viewer_id: UUID | None, users: list[User]
+) -> FollowListResponse:
     """사용자 목록 → 응답. viewer 의 팔로우 여부를 한 번에 채움."""
-    viewer_following: set = set()
+    viewer_following: set[UUID] = set()
     if viewer_id is not None and users:
         viewer_following = await service.repo.following_ids(
             follower_id=viewer_id,

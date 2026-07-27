@@ -4,6 +4,7 @@ CRUD + 피드 조회 (공개 범위 / 카테고리 / 짐 필터, 페이지네이
 users/repository.py 패턴 동일.
 """
 
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import and_, func, or_, select
@@ -36,7 +37,7 @@ class ClimbingRepository:
 
     # ── 생성 ──
 
-    async def create(self, *, user_id: UUID, **fields) -> ClimbingLog:
+    async def create(self, *, user_id: UUID, **fields: Any) -> ClimbingLog:
         # climbed_at 이 None 이면 컬럼에서 제거 → DB default(오늘) 적용
         if fields.get("climbed_at") is None:
             fields.pop("climbed_at", None)
@@ -47,7 +48,7 @@ class ClimbingRepository:
 
     # ── 수정 ──
 
-    async def update(self, log: ClimbingLog, **fields) -> ClimbingLog:
+    async def update(self, log: ClimbingLog, **fields: Any) -> ClimbingLog:
         for key, value in fields.items():
             setattr(log, key, value)
         await self.session.flush()

@@ -16,7 +16,7 @@ Spring/JPA 비교: User 모델과 동일 패턴.
 
 import uuid
 from datetime import date, datetime
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from sqlalchemy import (
     Boolean,
@@ -36,11 +36,18 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.domain.users.models import User
 from app.infra.db.base import Base
 
+if TYPE_CHECKING:
+    from app.domain.climbing.schemas import CommentPreview
+
 
 class ClimbingLog(Base):
     """클라이밍 기록 (한 문제 단위)."""
 
     __tablename__ = "climbing_logs"
+    # 아래 like_count 등은 DB 컬럼이 아니라 ClimbingService._attach_likes/
+    # _attach_comments 가 응답 조립 시 동적으로 주입하는 뷰 전용 필드라,
+    # Mapped[] 매핑 없이 타입만 선언한다.
+    __allow_unmapped__ = True
     __table_args__ = (
         # ADR-038: categories text[] 태그 검색용 GIN 인덱스
         Index(
@@ -180,6 +187,12 @@ class ClimbingLog(Base):
         DateTime(timezone=True),
         nullable=True,
     )
+
+    # ── 뷰 전용 동적 필드 (DB 컬럼 아님, ClimbingService 가 응답 조립 시 주입) ──
+    like_count: int
+    liked_by_me: bool
+    comment_count: int
+    top_comment: "CommentPreview | None"
 
     def __repr__(self) -> str:
         return (

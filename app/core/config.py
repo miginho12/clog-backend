@@ -52,7 +52,7 @@ class Settings(BaseSettings):
     db_pool_timeout: int = Field(default=30)
     db_echo: bool = Field(default=False)
 
-    @computed_field  # type: ignore[misc]
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def database_url(self) -> str:
         return (
@@ -62,7 +62,7 @@ class Settings(BaseSettings):
             f"/{self.db_name}"
         )
 
-    @computed_field  # type: ignore[misc]
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def database_url_safe(self) -> str:
         masked = "***" if self.db_password else "(empty)"
@@ -108,14 +108,14 @@ class Settings(BaseSettings):
     # 트랜스코딩 타임아웃 (초)
     transcode_timeout: int = Field(default=600)
 
-    @computed_field  # type: ignore[misc]
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def redis_url(self) -> str:
         if self.redis_password:
             return f"redis://:{self.redis_password}@{self.redis_host}:{self.redis_port}/{self.redis_db}"
         return f"redis://{self.redis_host}:{self.redis_port}/{self.redis_db}"
 
-    @computed_field  # type: ignore[misc]
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def arq_redis_url(self) -> str:
         """ARQ 작업 큐용 Redis URL (전용 DB)."""
@@ -123,7 +123,7 @@ class Settings(BaseSettings):
             return f"redis://:{self.redis_password}@{self.redis_host}:{self.redis_port}/{self.arq_redis_db}"
         return f"redis://{self.redis_host}:{self.redis_port}/{self.arq_redis_db}"
 
-    @computed_field  # type: ignore[misc]
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def redis_url_safe(self) -> str:
         if self.redis_password:

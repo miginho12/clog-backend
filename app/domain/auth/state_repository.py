@@ -71,7 +71,7 @@ class OAuthStateRepository:
         # DEL 이 삭제 개수 반환 (있으면 1, 없으면 0)
         # 원자적 — race condition X
         deleted = await self.redis.delete(key)
-        is_valid = deleted > 0
+        is_valid = bool(deleted > 0)
 
         if is_valid:
             logger.debug("oauth_state_consumed", state_prefix=state[:10])

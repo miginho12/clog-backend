@@ -2,7 +2,7 @@
 
 import contextlib
 from datetime import date, datetime
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -146,7 +146,7 @@ class CommentPreview(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def _map_author(cls, data):
+    def _map_author(cls, data: Any) -> Any:
         if isinstance(data, dict):
             return data
         user = getattr(data, "user", None)
@@ -183,7 +183,7 @@ class ClimbingLogResponse(ClimbingLogBase):
 
     @model_validator(mode="before")
     @classmethod
-    def _map_orm_extras(cls, data):
+    def _map_orm_extras(cls, data: Any) -> Any:
         # ORM 객체의 user(relationship) → author 매핑 +
         # service 가 동적 주입한 like_count/liked_by_me 를 읽음.
         # selectinload / 집계 주입이 된 경우에만 채워짐.

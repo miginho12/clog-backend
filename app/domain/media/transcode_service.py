@@ -20,6 +20,7 @@ from pathlib import Path
 import structlog
 
 from app.core.config import Settings
+from app.domain.climbing.models import ClimbingLog
 from app.domain.climbing.repository import ClimbingRepository
 from app.domain.media.service import MediaService
 from app.domain.notifications.service import NotificationService
@@ -139,7 +140,7 @@ class TranscodeService:
             )
         logger.info("transcode_done", log_id=str(log_id), url=public_url)
 
-    async def _mark_failed(self, log, reason: str) -> None:
+    async def _mark_failed(self, log: ClimbingLog, reason: str) -> None:
         """실패 처리: status=failed + 실패 알림. 원본 유지."""
         await self.climbing_repo.update(log, media_status="failed")
         await self.notification_service.notify_media_failed(

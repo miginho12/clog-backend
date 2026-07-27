@@ -40,7 +40,9 @@ async def list_comments(
     # 대댓글을 parent_id 로 묶어 스레드 구성
     replies_by_parent: dict[UUID, list[CommentResponse]] = {}
     for r in replies:
-        replies_by_parent.setdefault(r.parent_id, []).append(
+        parent_id = r.parent_id
+        assert parent_id is not None  # list_comments 가 이미 대댓글만 걸러줌
+        replies_by_parent.setdefault(parent_id, []).append(
             CommentResponse.model_validate(r)
         )
     items = [

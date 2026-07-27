@@ -2,6 +2,7 @@
 from uuid import UUID
 
 from sqlalchemy import delete, func, select
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.follows.models import Follow
@@ -65,6 +66,7 @@ class FollowRepository:
             .values(status="accepted")
         )
         await self.session.flush()
+        assert isinstance(result, CursorResult)  # update() 는 항상 CursorResult
         return (result.rowcount or 0) > 0
 
     async def remove(self, *, follower_id: UUID, following_id: UUID) -> None:

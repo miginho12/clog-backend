@@ -37,7 +37,7 @@ def init_redis() -> Redis:
         max_connections=settings.redis_max_connections,
     )
 
-    _redis_client = from_url(
+    _redis_client = from_url(  # type: ignore[no-untyped-call]  # redis-py stub 미비
         settings.redis_url,
         encoding="utf-8",
         decode_responses=True,         # str 로 자동 변환 (bytes 안 다룸)

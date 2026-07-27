@@ -7,6 +7,7 @@
 - 수정/삭제 (본인만)
 """
 
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,6 +22,7 @@ from app.domain.climbing.models import ClimbingLog
 from app.domain.climbing.repository import ClimbingRepository
 from app.domain.climbing.schemas import CommentPreview
 from app.domain.comment_likes.repository import CommentLikeRepository
+from app.domain.comments.models import Comment
 from app.domain.comments.repository import CommentRepository
 from app.domain.likes.repository import LikeRepository
 from app.domain.media.service import MediaError, MediaService
@@ -85,7 +87,7 @@ class ClimbingService:
         like_counts = await self.comment_like_repo.count_by_comments(cand_ids)
 
         # 게시물별 최고 좋아요 댓글 선정 (동점이면 최신 created_at)
-        best: dict = {}  # log_id -> (comment, like_count)
+        best: dict[UUID, tuple[Comment, int]] = {}  # log_id -> (comment, like_count)
         for c in candidates:
             lc = like_counts.get(c.id, 0)
             cur = best.get(c.climbing_log_id)
@@ -115,7 +117,7 @@ class ClimbingService:
 
     # ── 작성 ──
 
-    async def create_log(self, *, user_id: UUID, data: dict) -> ClimbingLog:
+    async def create_log(self, *, user_id: UUID, data: dict[str, Any]) -> ClimbingLog:
         media_type = data.get("media_type")
         media_url = data.get("media_url")
         if media_type in ("image", "video") and media_url:
@@ -213,9 +215,28 @@ class ClimbingService:
 
     # ── 피드 조회 ──
 
-    async def list_feed(self, **kwargs) -> tuple[list[ClimbingLog], bool]:
-        viewer_id = kwargs.get("viewer_id")
-        logs, has_next = await self.repo.list_feed(**kwargs)
+    async def list_feed(
+        self,
+        *,
+        viewer_id: UUID | None,
+        author_id: UUID | None = None,
+        category: str | None = None,
+        gym_name: str | None = None,
+        grade_system: str | None = None,
+        only_success: bool | None = None,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> tuple[list[ClimbingLog], bool]:
+        logs, has_next = await self.repo.list_feed(
+            viewer_id=viewer_id,
+            author_id=author_id,
+            category=category,
+            gym_name=gym_name,
+            grade_system=grade_system,
+            only_success=only_success,
+            page=page,
+            page_size=page_size,
+        )
         await self._attach_likes(logs, viewer_id)
         await self._attach_comments(logs, viewer_id)
         return logs, has_next
@@ -228,7 +249,7 @@ class ClimbingService:
     # ── 수정 (본인만) ──
 
     async def update_log(
-        self, *, log_id: UUID, user_id: UUID, data: dict
+        self, *, log_id: UUID, user_id: UUID, data: dict[str, Any]
     ) -> ClimbingLog:
         log = await self.repo.get_by_id(log_id)
         if log is None:

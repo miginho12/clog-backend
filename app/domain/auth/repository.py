@@ -108,7 +108,7 @@ class RedisRefreshTokenRepository:
             # 1. refresh token 저장 (TTL 포함)
             await pipe.set(token_key, data, ex=ttl_seconds)
             # 2. 사용자의 토큰 집합에 추가 (TTL 살짝 길게)
-            await pipe.sadd(user_key, jti)
+            await pipe.sadd(user_key, jti)  # type: ignore[misc]  # redis-py 파이프라인 스텁 미비
             await pipe.expire(user_key, ttl_seconds + 86400)  # +1일
             await pipe.execute()
 
@@ -183,7 +183,7 @@ class RedisRefreshTokenRepository:
         """
         user_key = _user_tokens_key(user_id)
         # 사용자의 모든 jti 가져오기
-        jtis = await self.redis.smembers(user_key)
+        jtis = await self.redis.smembers(user_key)  # type: ignore[misc]  # redis-py 스텁 미비
         if not jtis:
             logger.info("revoke_all_no_tokens", user_id=user_id)
             return 0

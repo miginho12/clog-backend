@@ -10,6 +10,7 @@ prod/dev: JSON (Loki/ELK 호환)
 
 import logging
 import sys
+from typing import Any, cast
 
 import structlog
 
@@ -28,7 +29,7 @@ def setup_logging() -> None:
     )
 
     # structlog 프로세서 체인
-    processors: list = [
+    processors: list[Any] = [
         structlog.contextvars.merge_contextvars,
         structlog.processors.add_log_level,
         structlog.processors.TimeStamper(fmt="iso", utc=True),
@@ -65,4 +66,4 @@ def get_logger(name: str | None = None) -> structlog.BoundLogger:
         logger = get_logger(__name__)
         logger.info("user_login", user_id=123, ip="192.168.1.1")
     """
-    return structlog.get_logger(name)
+    return cast(structlog.BoundLogger, structlog.get_logger(name))
