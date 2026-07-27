@@ -66,7 +66,13 @@ jobs:
 
       - name: Type check (mypy)
         run: uv run mypy app
-        continue-on-error: true
+
+      - name: Security audit (pip-audit)
+        # PYSEC-2026-1325: ecdsa 의 Minerva 타이밍 사이드채널 — python-jose 전이
+        # 의존성으로만 들어오고, 이 프로젝트는 JWT_ALGORITHM=RS256 만 쓰므로
+        # ecdsa.SigningKey.sign_digest() 경로 자체가 호출되지 않는다.
+        # 업스트림도 side-channel 은 스코프 밖이라 fix 계획 없음(2026-07-27 확인).
+        run: uv run pip-audit --ignore-vuln PYSEC-2026-1325
 
       - name: Generate ephemeral JWT keypair
         run: |
