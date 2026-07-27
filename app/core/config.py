@@ -171,6 +171,10 @@ class Settings(BaseSettings):
     minio_presign_expiry: int = Field(default=300)  # 5분
     media_max_image_bytes: int = Field(default=10 * 1024 * 1024)   # 10MB
     media_max_video_bytes: int = Field(default=100 * 1024 * 1024)  # 100MB (1분 영상 여유)
+    # 영상 길이(초) 상한 — 클라이밍 시도는 아무리 길어도 2분 안팎이라 60초로 제한.
+    # 용량만으론 비트레이트에 따라 저화질 장시간 영상이 상한 안에 들어올 수
+    # 있어(2026-07-27), ffprobe 로 실제 길이를 별도 검증한다.
+    media_max_video_duration_seconds: int = Field(default=60)
 
     oauth_state_ttl_seconds: int = Field(default=300)
 

@@ -124,6 +124,8 @@ class ClimbingService:
             await self._enforce_media_size_limit(
                 media_type=media_type, media_url=media_url
             )
+        if media_type == "video" and media_url:
+            await self._enforce_video_duration_limit(media_url=media_url)
 
         # 영상이면 트랜스코딩 파이프라인 진입:
         #   원본을 original_media_url 로 보관, media_url 은 압축 완료까지 None,
@@ -186,6 +188,35 @@ class ClimbingService:
                 "media_too_large",
                 f"파일 용량이 허용 한도({limit // (1024 * 1024)}MB)를 초과했습니다",
                 {"size": size, "limit": limit},
+            )
+
+    async def _enforce_video_duration_limit(self, *, media_url: str) -> None:
+        """영상 길이가 상한을 넘으면 객체를 지우고 거부.
+
+        용량 상한만으론 비트레이트에 따라 저화질 장시간 영상이 한도 안에
+        들어올 수 있어(2026-07-27), ffprobe 로 실제 길이를 별도 검증한다.
+        클라이밍 시도는 아무리 길어도 2분 안팎이라 60초로 제한.
+        ffprobe 자체가 실패(네트워크 오류 등)하면 정상 업로드를 막지 않기
+        위해 검증을 건너뛴다 — 트랜스코딩 단계에서 어차피 원본을 다시 받는다.
+        """
+        object_key = self.media_service.extract_object_key(media_url)
+        if object_key is None:
+            return
+        duration = await self.media_service.get_video_duration(object_key)
+        if duration is None:
+            return
+        limit = self.settings.media_max_video_duration_seconds
+        if duration > limit:
+            self.media_service.delete_object(object_key)
+            logger.warning(
+                "media_duration_limit_exceeded",
+                duration=duration,
+                limit=limit,
+            )
+            raise MediaError(
+                "media_too_long",
+                f"영상 길이가 허용 한도({limit}초)를 초과했습니다",
+                {"duration": duration, "limit": limit},
             )
 
     # ── 단건 조회 (공개 범위 권한) ──

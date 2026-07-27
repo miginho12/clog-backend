@@ -1,5 +1,6 @@
 """미디어 업로드 — MinIO presigned URL 발급."""
 
+import asyncio
 import uuid
 from collections.abc import Iterator
 from datetime import timedelta
@@ -100,6 +101,36 @@ class MediaService:
     def delete_object(self, object_key: str) -> None:
         """단일 객체 삭제 (멱등 — 없는 키여도 에러 안 냄)."""
         self._client.remove_object(self._bucket, object_key)
+
+    async def get_video_duration(self, object_key: str) -> float | None:
+        """영상 길이(초)를 ffprobe 로 조회 (다운로드/디코딩 없이 메타데이터만).
+
+        get_object_size 와 대응되는 사후 검증용 메서드. 클러스터 내부망
+        URL(http, TLS 없음)을 ffprobe 에 직접 넘겨 원격으로 읽는다.
+        실패(ffprobe 에러, 타임아웃, 파싱 실패)하면 None — 호출측이 검증을
+        건너뛸지 결정한다(네트워크 오류로 정상 업로드를 막지 않기 위함).
+        """
+        url = f"http://{self.settings.minio_endpoint}/{self._bucket}/{object_key}"
+        proc = await asyncio.create_subprocess_exec(
+            "ffprobe",
+            "-v", "error",
+            "-show_entries", "format=duration",
+            "-of", "csv=p=0",
+            url,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        try:
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10)
+        except TimeoutError:
+            proc.kill()
+            return None
+        if proc.returncode != 0:
+            return None
+        try:
+            return float(stdout.decode().strip())
+        except ValueError:
+            return None
 
     def get_object_size(self, object_key: str) -> int | None:
         """객체의 실제 업로드 용량(bytes) 조회.
