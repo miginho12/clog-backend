@@ -160,6 +160,16 @@ class ClimbingLog(Base):
         nullable=True,
         comment="원본 영상 URL (트랜스코딩 소스, 압축 후 삭제)",
     )
+    # 영상 정지 썸네일 (ffmpeg thumbnail 필터로 압축 시 함께 생성).
+    # 그리드 등에서 <video> 태그 없이 <img> 로만 보여주기 위함 — Android
+    # WebView 가 src 없는/미재생 <video> 를 깨진 미디어 아이콘으로 렌더링하는
+    # 문제를 근본적으로 우회 (2026-07-30). null 이면 image 게시물이거나
+    # 구버전 영상(백필 전).
+    thumbnail_url: Mapped[str | None] = mapped_column(
+        String(500),
+        nullable=True,
+        comment="영상 정지 썸네일 URL (video 전용, null=image 또는 백필 전)",
+    )
 
     # ── 공개 범위 ──
     visibility: Mapped[Literal["public", "private"]] = mapped_column(

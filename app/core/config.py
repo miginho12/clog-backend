@@ -113,6 +113,9 @@ class Settings(BaseSettings):
     transcode_max_jobs: int = Field(default=1)
     # 트랜스코딩 타임아웃 (초)
     transcode_timeout: int = Field(default=600)
+    # 영상 정지 썸네일 긴 변 최대 크기 — 그리드 3열 타일용이라 본편 영상보다
+    # 훨씬 작게 (용량/대역폭 절감)
+    thumbnail_max_dimension: int = Field(default=480)
 
     @computed_field  # type: ignore[prop-decorator]
     @property

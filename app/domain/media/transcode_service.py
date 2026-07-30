@@ -32,6 +32,46 @@ class TranscodeError(Exception):
     """트랜스코딩 실패."""
 
 
+async def extract_video_thumbnail(settings: Settings, src: str, dst: str) -> None:
+    """영상에서 대표 프레임 1장을 JPG 로 추출 (그리드 정지 썸네일용).
+
+    'thumbnail' 필터는 배치(기본 100프레임) 내에서 장면을 대표하는 프레임을
+    고른다 — 항상 0프레임을 쓰면 페이드인/암전 프레임이 잡힐 수 있어서.
+    그리드 타일용이라 본편보다 훨씬 작게 리사이즈.
+    모듈 레벨 함수인 이유: 신규 업로드(TranscodeService) 뿐 아니라 기존
+    영상 백필 스크립트(backfill_video_thumbnails.py)에서도 동일 로직을
+    재사용해야 커맨드가 둘로 갈라지지 않는다.
+    """
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-i",
+        src,
+        "-vf",
+        (
+            "thumbnail,"
+            f"scale=w={settings.thumbnail_max_dimension}:h={settings.thumbnail_max_dimension}"
+            ":force_original_aspect_ratio=decrease"
+        ),
+        "-frames:v",
+        "1",
+        dst,
+    ]
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        _, stderr = await asyncio.wait_for(proc.communicate(), timeout=settings.transcode_timeout)
+    except TimeoutError:
+        proc.kill()
+        raise TranscodeError("ffmpeg thumbnail timeout") from None
+    if proc.returncode != 0:
+        tail = (stderr or b"").decode(errors="replace")[-500:]
+        raise TranscodeError(f"ffmpeg thumbnail failed: {tail}")
+
+
 class TranscodeService:
     def __init__(
         self,
@@ -49,21 +89,31 @@ class TranscodeService:
         """ffmpeg 로 720p CRF23 압축 (비동기 subprocess)."""
         s = self.settings
         cmd = [
-            "ffmpeg", "-y", "-i", src,
+            "ffmpeg",
+            "-y",
+            "-i",
+            src,
             # 비율 유지 + 긴 변을 max_dimension 이하로 (세로/가로 무관).
             # force_original_aspect_ratio=decrease: 원본보다 크게 안 늘림.
             # 짝수 강제(-2 대신 trunc): H.264 는 너비/높이가 짝수여야 함.
-            "-vf", (
+            "-vf",
+            (
                 f"scale=w={s.transcode_max_dimension}:h={s.transcode_max_dimension}"
                 ":force_original_aspect_ratio=decrease"
                 ",scale=trunc(iw/2)*2:trunc(ih/2)*2"
             ),
-            "-c:v", "libx264",
-            "-preset", s.transcode_preset,
-            "-crf", str(s.transcode_crf),
-            "-c:a", "aac",
-            "-b:a", s.transcode_audio_bitrate,
-            "-movflags", "+faststart",
+            "-c:v",
+            "libx264",
+            "-preset",
+            s.transcode_preset,
+            "-crf",
+            str(s.transcode_crf),
+            "-c:a",
+            "aac",
+            "-b:a",
+            s.transcode_audio_bitrate,
+            "-movflags",
+            "+faststart",
             dst,
         ]
         logger.info("ffmpeg_start", src=src, dst=dst)
@@ -73,9 +123,7 @@ class TranscodeService:
             stderr=asyncio.subprocess.PIPE,
         )
         try:
-            _, stderr = await asyncio.wait_for(
-                proc.communicate(), timeout=s.transcode_timeout
-            )
+            _, stderr = await asyncio.wait_for(proc.communicate(), timeout=s.transcode_timeout)
         except TimeoutError:
             proc.kill()
             raise TranscodeError("ffmpeg timeout") from None
@@ -101,6 +149,7 @@ class TranscodeService:
         with tempfile.TemporaryDirectory() as tmpdir:
             src = os.path.join(tmpdir, "original.mp4")
             dst = os.path.join(tmpdir, "compressed.mp4")
+            thumb = os.path.join(tmpdir, "thumbnail.jpg")
             try:
                 self.media.download_to_file(object_key, src)
                 await self._run_ffmpeg(src, dst)
@@ -108,18 +157,31 @@ class TranscodeService:
                     raise TranscodeError("output empty")
                 user_prefix = object_key.rsplit("/", 1)[0]
                 new_key = f"{user_prefix}/{uuid.uuid4().hex}.mp4"
-                public_url = self.media.upload_file(
-                    new_key, dst, content_type="video/mp4"
-                )
+                public_url = self.media.upload_file(new_key, dst, content_type="video/mp4")
             except Exception as e:
-                logger.error(
-                    "transcode_failed", log_id=str(log_id), error=str(e)
-                )
+                logger.error("transcode_failed", log_id=str(log_id), error=str(e))
                 await self._mark_failed(log, str(e))
                 return
 
+            # 썸네일 추출/업로드 실패는 영상 게시 자체를 막지 않는다 — 게시물은
+            # 이미 정상 압축됐으니 done 으로 공개하고, 썸네일만 null 로 남겨서
+            # 프론트가 플레이스홀더로 대체 표시(백필 스크립트가 나중에 채움).
+            thumbnail_url: str | None = None
+            try:
+                await extract_video_thumbnail(self.settings, dst, thumb)
+                if Path(thumb).exists() and Path(thumb).stat().st_size > 0:
+                    thumb_key = f"{user_prefix}/{uuid.uuid4().hex}.jpg"
+                    thumbnail_url = self.media.upload_file(
+                        thumb_key, thumb, content_type="image/jpeg"
+                    )
+            except Exception as e:
+                logger.warning("transcode_thumbnail_failed", log_id=str(log_id), error=str(e))
+
         await self.climbing_repo.update(
-            log, media_url=public_url, media_status="done"
+            log,
+            media_url=public_url,
+            media_status="done",
+            thumbnail_url=thumbnail_url,
         )
         await self.notification_service.notify_media_ready(
             recipient_id=log.user_id, climbing_log_id=log.id
@@ -136,7 +198,8 @@ class TranscodeService:
             # 남은 원본은 media-reconcile CronJob 이 정리.
             logger.warning(
                 "transcode_original_delete_failed",
-                log_id=str(log_id), error=str(e),
+                log_id=str(log_id),
+                error=str(e),
             )
         logger.info("transcode_done", log_id=str(log_id), url=public_url)
 

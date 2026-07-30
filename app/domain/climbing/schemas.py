@@ -172,6 +172,7 @@ class ClimbingLogResponse(ClimbingLogBase):
     media_type: str | None
     media_url: str | None
     media_status: str | None = None
+    thumbnail_url: str | None = None
     visibility: str
     created_at: datetime
     updated_at: datetime
