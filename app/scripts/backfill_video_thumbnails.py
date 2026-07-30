@@ -5,8 +5,10 @@ thumbnail_url 이 비어있다. 대상 게시물마다 압축본(media_url)을 �
 extract_video_thumbnail 로 프레임을 뽑고 업로드, DB 갱신.
 
 실행:
-  python -m app.scripts.backfill_video_thumbnails            # dry-run (조회만, 처리 안 함)
-  python -m app.scripts.backfill_video_thumbnails --apply     # 실제 처리
+  python -m app.scripts.backfill_video_thumbnails                     # dry-run (조회만, 처리 안 함)
+  python -m app.scripts.backfill_video_thumbnails --apply             # thumbnail_url 없는 것만 처리
+  python -m app.scripts.backfill_video_thumbnails --apply --force     # 이미 있는 것도 재생성
+                                                                       # (예: ffmpeg 인코딩 버그로 재생성 필요할 때)
 """
 
 import argparse
@@ -29,22 +31,24 @@ from app.infra.db.engine import close_engine, init_engine
 logger = get_logger(__name__)
 
 
-async def main(apply: bool) -> None:
+async def main(apply: bool, force: bool) -> None:
     init_engine()
     settings = get_settings()
     media = MediaService(settings, internal=True)
     sm = get_sessionmaker()
 
     async with sm() as session:
-        stmt = select(ClimbingLog).where(
+        conditions = [
             ClimbingLog.media_type == "video",
             ClimbingLog.media_status == "done",
             ClimbingLog.media_url.is_not(None),
-            ClimbingLog.thumbnail_url.is_(None),
-        )
+        ]
+        if not force:
+            conditions.append(ClimbingLog.thumbnail_url.is_(None))
+        stmt = select(ClimbingLog).where(*conditions)
         targets = (await session.execute(stmt)).scalars().all()
 
-        logger.info("backfill_scan", targets=len(targets), apply=apply)
+        logger.info("backfill_scan", targets=len(targets), apply=apply, force=force)
 
         done = 0
         failed = 0
@@ -94,5 +98,6 @@ async def main(apply: bool) -> None:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--apply", action="store_true", help="실제 처리 (기본은 dry-run 조회만)")
+    parser.add_argument("--force", action="store_true", help="thumbnail_url 이미 있어도 재생성")
     args = parser.parse_args()
-    asyncio.run(main(args.apply))
+    asyncio.run(main(args.apply, args.force))

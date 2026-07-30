@@ -41,6 +41,13 @@ async def extract_video_thumbnail(settings: Settings, src: str, dst: str) -> Non
     모듈 레벨 함수인 이유: 신규 업로드(TranscodeService) 뿐 아니라 기존
     영상 백필 스크립트(backfill_video_thumbnails.py)에서도 동일 로직을
     재사용해야 커맨드가 둘로 갈라지지 않는다.
+
+    -bsf:v mjpeg2jpeg: 이 이미지의 ffmpeg 빌드(5.1.9)의 mjpeg 인코더가 만드는
+    출력엔 표준 JFIF APP0 헤더가 빠져있다(2026-07-30 실제 prod 산출물을 바이트
+    단위로 까본 결과 확인 — 데스크톱에서 curl로 받으면 file/ffmpeg는 문제없이
+    읽지만, Android WebView 이미지 디코더가 이걸 못 읽어서 그리드에서 깨진
+    미디어 아이콘으로 보였을 가능성이 높음). 이 비트스트림 필터를 거치면
+    표준 JFIF 헤더가 붙은 완전한 JPEG이 나온다(재디코딩 검증 완료).
     """
     cmd = [
         "ffmpeg",
@@ -55,6 +62,8 @@ async def extract_video_thumbnail(settings: Settings, src: str, dst: str) -> Non
         ),
         "-frames:v",
         "1",
+        "-bsf:v",
+        "mjpeg2jpeg",
         dst,
     ]
     proc = await asyncio.create_subprocess_exec(
