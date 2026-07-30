@@ -38,6 +38,11 @@ class Settings(BaseSettings):
             "http://localhost:3000",         # Next.js 로컬 개발
             "https://clog.tail099985.ts.net",  # Tailscale Funnel
             "https://climb-log.com",           # 운영 도메인 (Cloudflare Tunnel)
+            # Capacitor 모바일 앱(2026-07-30) — capacitor.config.ts 의 androidScheme
+            # 설정과 맞춰야 함. iOS 는 capacitor:// 고정, Android 는 명시적으로
+            # https 로 지정(기본 http 는 CORS 이슈가 알려져 있음).
+            "capacitor://localhost",
+            "https://localhost",
         ]
     )
 
