@@ -83,10 +83,19 @@ class KakaoUserInfo(BaseModel):
         return None
 
     def get_profile_image(self) -> str | None:
-        """프로필 이미지 URL 추출."""
+        """프로필 이미지 URL 추출.
+
+        카카오가 http:// 로 내려주는 경우가 있는데(2026-07-30 확인), 같은
+        자산이 https:// 로도 그대로 서빙됨. Android WebView(Capacitor 앱)는
+        일반 브라우저 탭과 달리 mixed content(https 페이지의 http 리소스)를
+        기본적으로 훨씬 엄격하게 차단해 이미지가 깨져 보임 — 스킴만 강제 전환.
+        """
+        url = None
         if self.kakao_account and self.kakao_account.profile:
-            return self.kakao_account.profile.profile_image_url
-        return None
+            url = self.kakao_account.profile.profile_image_url
+        if url and url.startswith("http://"):
+            url = "https://" + url.removeprefix("http://")
+        return url
 
     def get_email(self) -> str | None:
         """이메일 추출 (동의했고 유효한 경우만)."""
