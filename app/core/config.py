@@ -32,11 +32,12 @@ class Settings(BaseSettings):
     # 환경별 허용 origin
     # local:  로컬 프론트엔드 개발용
     # dev:    K8s + Tailscale Funnel 환경
-    # prod:   향후 운영 도메인
+    # prod:   운영 도메인(2026-07-30, Cloudflare Tunnel 경유)
     cors_origins: list[str] = Field(
         default=[
             "http://localhost:3000",         # Next.js 로컬 개발
             "https://clog.tail099985.ts.net",  # Tailscale Funnel
+            "https://climb-log.com",           # 운영 도메인 (Cloudflare Tunnel)
         ]
     )
 
