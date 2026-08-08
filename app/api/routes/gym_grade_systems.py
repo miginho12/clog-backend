@@ -3,15 +3,19 @@
 엔드포인트:
 - POST   /gym-grade-systems              등록 (인증 필수, 중복 gym_name → 409)
 - GET    /gym-grade-systems              목록 (공개, ?brand_name= 으로 브랜드 필터)
+- GET    /gym-grade-systems/representatives  암장 간 난이도 환산 탭 대상 (공개, 공식+브랜드 대표/단독만)
 - GET    /gym-grade-systems/ranking      암장 랭킹 (공개, ?gym_name= 필수, ?period=all|month|week — 공개 계정 공개 컬러 기록만)
 - GET    /gym-grade-systems/{id}         단건 (공개)
-- PATCH  /gym-grade-systems/{id}         color_order + brand_name 수정 (본인 비공식 등록분만)
+- PATCH  /gym-grade-systems/{id}         color_order + brand_name 수정 (본인 비공식 등록분만),
+                                          gym_name 개명은 admin 전용
 - DELETE /gym-grade-systems/{id}         삭제 (본인 비공식 등록분만)
 
 색순서는 객관적 공개 정보(ADR-041)라 조회는 비로그인 허용.
-gym_name 은 climbing_logs 매칭 키라 불변(항상 지점 단위, 예: "피커스 종로") —
-brand_name 은 같은 브랜드 지점(예: "피커스")을 묶어보는 선택적 메타데이터로,
-color_order 와 함께 수정 가능.
+gym_name 은 climbing_logs 매칭 키(문자열, FK 아님) — brand_name 은 같은 브랜드
+지점(예: "피커스")을 묶어보는 선택적 메타데이터로 color_order 와 함께 수정
+가능. gym_name 자체를 바꾸는 개명은 admin 만 가능하고, 개명 시 과거
+climbing_logs.gym_name 도 같은 트랜잭션에서 일괄 갱신되어 기존 기록의
+그레이드 산정이 깨지지 않는다.
 """
 
 from typing import Literal
@@ -95,6 +99,18 @@ async def get_gym_ranking(
 
 
 @router.get(
+    "/representatives",
+    response_model=list[GymGradeSystemResponse],
+    summary="암장 간 난이도 환산 탭 대상 (공식 + 브랜드 대표/단독만, 공개)",
+)
+async def list_gym_system_representatives(
+    service: GradeServiceDep,
+) -> list[GymGradeSystemResponse]:
+    systems = await service.list_gym_system_representatives()
+    return [GymGradeSystemResponse.model_validate(s) for s in systems]
+
+
+@router.get(
     "/{system_id}",
     response_model=GymGradeSystemResponse,
     summary="짐 색체계 단건 (공개)",
@@ -110,7 +126,7 @@ async def get_gym_system(
 @router.patch(
     "/{system_id}",
     response_model=GymGradeSystemResponse,
-    summary="짐 색체계 수정 (본인 등록분, color_order + brand_name)",
+    summary="짐 색체계 수정 (본인 등록분, color_order + brand_name, gym_name 개명은 admin 전용)",
 )
 async def update_gym_system(
     system_id: UUID,
@@ -125,6 +141,7 @@ async def update_gym_system(
         is_admin=user.is_admin,
         brand_name=payload.brand_name,
         difficulty_offset=payload.difficulty_offset,
+        gym_name=payload.gym_name,
     )
     return GymGradeSystemResponse.model_validate(system)
 

@@ -9,7 +9,7 @@ from collections.abc import Iterable
 from datetime import date
 from uuid import UUID
 
-from sqlalchemy import ColumnElement, func, or_, select
+from sqlalchemy import ColumnElement, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -69,6 +69,29 @@ class GradeRepository:
         )
         return list(result.scalars().all())
 
+    async def list_official_representatives(self) -> list[GymGradeSystem]:
+        """암장 간 난이도 환산 탭 대상: 공식 시드이면서 브랜드 대표/단독인 행만.
+
+        ef96f2ae7b85 마이그레이션에서 지점 분리 전 기존 등록분은 각자
+        자기 자신을 brand_name 으로 백필했다(예: gym_name="더클라임",
+        brand_name="더클라임"). 즉 대표/단독 판정은 brand_name 이 없거나
+        (신규 미지정) gym_name 과 같은 경우이고, brand_name 이 gym_name 과
+        달라야 진짜 하위 지점(예: gym_name="서울숲클라이밍 종로",
+        brand_name="서울숲클라이밍")이다. 지점은 브랜드 대표와 환산 탭에서
+        중복 노출되지 않도록 제외한다."""
+        result = await self.session.execute(
+            select(GymGradeSystem)
+            .where(
+                GymGradeSystem.is_official.is_(True),
+                or_(
+                    GymGradeSystem.brand_name.is_(None),
+                    GymGradeSystem.brand_name == GymGradeSystem.gym_name,
+                ),
+            )
+            .order_by(GymGradeSystem.gym_name)
+        )
+        return list(result.scalars().all())
+
     # ── 짐 색 순서 등록/수정/삭제 (구현 6) ──
 
     async def create(
@@ -101,7 +124,7 @@ class GradeRepository:
         difficulty_offset: float = 0.0,
     ) -> GymGradeSystem:
         """color_order + brand_name + difficulty_offset 갱신. gym_name 은
-        불변(기록 매칭 키).
+        여기서 다루지 않는다(개명은 rename_gym, admin 전용).
 
         전부 항상 전체 교체(요청에 실린 값 그대로 반영) — 수정 폼이 항상
         현재값을 채워서 보내므로 부분 패치를 지원할 필요 없음.
@@ -111,6 +134,26 @@ class GradeRepository:
         system.difficulty_offset = difficulty_offset
         await self.session.flush()
         return system
+
+    async def rename_gym(self, system: GymGradeSystem, new_gym_name: str) -> None:
+        """gym_name 개명 + climbing_logs.gym_name 일괄 갱신(같은 트랜잭션).
+
+        climbing_logs.gym_name 은 FK 가 아니라 이 테이블과 문자열로만
+        매칭되는 자유 텍스트 컬럼이라, 여기서 같이 갱신하지 않으면 옛
+        이름으로 이미 기록된 과거 기록들이 조용히(에러 없이) 매칭 실패해
+        그레이드 계산에서 빠져버린다. 호출부(service)에서 admin 권한 +
+        신규 이름 중복 여부를 먼저 검증한 뒤 호출할 것.
+        """
+        old_name = system.gym_name
+        if old_name == new_gym_name:
+            return
+        await self.session.execute(
+            update(ClimbingLog)
+            .where(ClimbingLog.gym_name == old_name)
+            .values(gym_name=new_gym_name)
+        )
+        system.gym_name = new_gym_name
+        await self.session.flush()
 
     async def delete(self, system: GymGradeSystem) -> None:
         """hard delete (GymGradeSystem 은 soft-delete 미지원 모델)."""

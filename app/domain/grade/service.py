@@ -716,6 +716,10 @@ class GradeService:
     ) -> list[GymGradeSystem]:
         return await self.repo.list_all(brand_name=brand_name)
 
+    async def list_gym_system_representatives(self) -> list[GymGradeSystem]:
+        """암장 간 난이도 환산 탭용: 브랜드 대표/단독 공식 암장만."""
+        return await self.repo.list_official_representatives()
+
     async def get_gym_system(self, system_id: UUID) -> GymGradeSystem:
         system = await self.repo.get_by_id(system_id)
         if system is None:
@@ -776,13 +780,20 @@ class GradeService:
         is_admin: bool = False,
         brand_name: str | None = None,
         difficulty_offset: float = 0.0,
+        gym_name: str | None = None,
     ) -> GymGradeSystem:
-        """color_order + brand_name + difficulty_offset 수정.
+        """color_order + brand_name + difficulty_offset (+ gym_name) 수정.
 
         일반 사용자: 본인 등록분(비공식)만, difficulty_offset 은 기존 값
         그대로 유지(비admin이 보낸 값은 무시 — 0으로 덮어쓰면 admin이
         미리 설정해둔 보정치가 본인이 색 순서만 고쳐도 날아가버림).
         admin: 공식·타인 등록분 포함 전체 + difficulty_offset 설정 가능.
+
+        gym_name(개명)은 admin 전용 — 일반 사용자가 값을 보내도 무시한다.
+        climbing_logs.gym_name 이 FK 가 아니라 문자열 매칭 키라, 개명 시
+        과거 기록까지 같은 트랜잭션에서 함께 갱신해야 그레이드 계산이
+        조용히 깨지지 않는다(repo.rename_gym). 신규 이름이 이미 다른
+        암장에서 쓰이는 중이면 GymGradeSystemAlreadyExists(409).
         """
         system = await self.repo.get_by_id(system_id)
         if system is None:
@@ -792,6 +803,11 @@ class GradeService:
         ):
             raise GymGradeSystemForbidden(str(system_id))
         offset = difficulty_offset if is_admin else system.difficulty_offset
+        if is_admin and gym_name is not None and gym_name != system.gym_name:
+            existing = await self.repo.get_by_gym_name(gym_name)
+            if existing is not None:
+                raise GymGradeSystemAlreadyExists(gym_name)
+            await self.repo.rename_gym(system, gym_name)
         updated = await self.repo.update_color_order(
             system, color_order, brand_name=brand_name, difficulty_offset=offset
         )

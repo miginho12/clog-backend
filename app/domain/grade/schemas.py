@@ -130,7 +130,7 @@ class GymGradeSystemCreate(BaseModel):
 
 
 class GymGradeSystemUpdate(BaseModel):
-    """짐 색체계 수정 요청. color_order + brand_name 수정 가능 (gym_name 불변)."""
+    """짐 색체계 수정 요청. color_order + brand_name + gym_name 수정 가능."""
 
     color_order: list[str] = Field(
         ..., examples=[["흰", "노", "주", "초", "파", "빨", "보", "회", "검"]]
@@ -147,6 +147,17 @@ class GymGradeSystemUpdate(BaseModel):
         le=0.5,
         description="암장 간 환산 보정치 — admin만 반영(일반 사용자는 기존값 유지)",
     )
+    gym_name: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=100,
+        examples=["피커스 종로"],
+        description=(
+            "암장 이름 개명 — admin 전용(일반 사용자가 보내면 무시). "
+            "생략/None 이면 기존 이름 유지. 개명 시 climbing_logs.gym_name 도 "
+            "같은 트랜잭션에서 일괄 갱신되어 과거 기록의 그레이드 산정을 유지한다."
+        ),
+    )
 
     @field_validator("brand_name")
     @classmethod
@@ -155,6 +166,16 @@ class GymGradeSystemUpdate(BaseModel):
             return v
         v = v.strip()
         return v or None
+
+    @field_validator("gym_name")
+    @classmethod
+    def _strip_gym_name(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        v = v.strip()
+        if not v:
+            raise ValueError("gym_name 은 비어 있을 수 없습니다")
+        return v
 
     @field_validator("color_order")
     @classmethod
