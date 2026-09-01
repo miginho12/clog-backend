@@ -79,6 +79,10 @@ def create_app() -> FastAPI:
         title=settings.app_name,
         version=settings.app_version,
         lifespan=lifespan,
+        # prod에서는 API 스키마/문서 비공개 (정찰 공격 표면 축소)
+        docs_url=None if settings.is_production else "/docs",
+        redoc_url=None if settings.is_production else "/redoc",
+        openapi_url=None if settings.is_production else "/openapi.json",
     )
 
     # ── Rate Limiter (Day 14 ⭐) ──
