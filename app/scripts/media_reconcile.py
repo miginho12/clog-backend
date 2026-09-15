@@ -1,6 +1,7 @@
 """MinIO orphan 미디어 청소 (reconcile).
 
-보존 집합 = (활성 기록 media_url) ∪ (soft-deleted 이지만 유예기간 내 기록 media_url)
+보존 집합 = (활성 기록 media_url/thumbnail_url) ∪ (soft-deleted 이지만
+유예기간 내 기록 media_url/thumbnail_url)
 버킷 객체 중 보존 집합에 없는 것 = orphan → 삭제.
 
 실행:
@@ -14,6 +15,7 @@ import os
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
@@ -29,25 +31,29 @@ logger = get_logger(__name__)
 RETENTION_DAYS = int(os.getenv("MEDIA_RECONCILE_RETENTION_DAYS", "2"))
 
 
-async def collect_referenced_keys(media: MediaService) -> set[str]:
-    """보존해야 할 object_key 집합 수집."""
-    cutoff = datetime.now(UTC) - timedelta(days=RETENTION_DAYS)
-    sm = get_sessionmaker()
+async def collect_referenced_keys(
+    session: AsyncSession, media: MediaService, cutoff: datetime
+) -> set[str]:
+    """보존해야 할 object_key 집합 수집.
+
+    활성(deleted_at IS NULL) + 유예기간 내(deleted_at > cutoff) 의
+    media_url/thumbnail_url — thumbnail_url 을 빼먹으면 영상 게시물의
+    정지 썸네일이 매번 orphan 으로 오인되어 삭제된다(실제 발생한 회귀).
+    """
     referenced: set[str] = set()
-    async with sm() as session:
-        # 활성(deleted_at IS NULL) + 유예기간 내(deleted_at > cutoff) 의 media_url
-        stmt = select(ClimbingLog.media_url).where(
-            ClimbingLog.media_url.is_not(None),
-            (ClimbingLog.deleted_at.is_(None))
-            | (ClimbingLog.deleted_at > cutoff),
-        )
-        rows = (await session.execute(stmt)).scalars().all()
-    for url in rows:
-        if not url:
-            continue
-        key = media.extract_object_key(url)
-        if key:
-            referenced.add(key)
+    stmt = select(ClimbingLog.media_url, ClimbingLog.thumbnail_url).where(
+        (ClimbingLog.media_url.is_not(None) | ClimbingLog.thumbnail_url.is_not(None)),
+        (ClimbingLog.deleted_at.is_(None))
+        | (ClimbingLog.deleted_at > cutoff),
+    )
+    rows = (await session.execute(stmt)).all()
+    for media_url, thumbnail_url in rows:
+        for url in (media_url, thumbnail_url):
+            if not url:
+                continue
+            key = media.extract_object_key(url)
+            if key:
+                referenced.add(key)
     return referenced
 
 
@@ -55,8 +61,11 @@ async def main(apply: bool) -> None:
     init_engine()
     settings = get_settings()
     media = MediaService(settings, internal=True)
+    cutoff = datetime.now(UTC) - timedelta(days=RETENTION_DAYS)
+    sm = get_sessionmaker()
 
-    referenced = await collect_referenced_keys(media)
+    async with sm() as session:
+        referenced = await collect_referenced_keys(session, media, cutoff)
     all_keys = list(media.list_object_keys())
     orphans = [k for k in all_keys if k not in referenced]
 
