@@ -111,8 +111,10 @@ class Settings(BaseSettings):
     transcode_audio_bitrate: str = Field(default="128k")
     # 워커 동시 처리 수 (라파이 부담 제한)
     transcode_max_jobs: int = Field(default=1)
-    # 트랜스코딩 타임아웃 (초)
-    transcode_timeout: int = Field(default=600)
+    # 트랜스코딩 타임아웃 (초) — 일반 ffmpeg / 들찍 하위 프로세스 전체에 적용.
+    # 900: prod 실측 들찍 0.176s/프레임(4K HEVC 1308프레임 233s, 2026-10-13) 기준
+    # 4K60 60s(3600프레임) ≈ 630s 로 600s 를 넘을 수 있어 상향. arq job_timeout 은 +120 자동.
+    transcode_timeout: int = Field(default=900)
     # 영상 정지 썸네일 긴 변 최대 크기 — 그리드 3열 타일용이라 본편 영상보다
     # 훨씬 작게 (용량/대역폭 절감)
     thumbnail_max_dimension: int = Field(default=480)

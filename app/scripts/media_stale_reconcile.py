@@ -34,7 +34,7 @@ logger = get_logger(__name__)
 
 # processing 상태가 이 시간(분) 이상 멈춰 있으면 stale 로 간주.
 # 근거: job_timeout(transcode_timeout+120s) x max_tries(2) 가 arq 가 포기하는
-# 최대 시간(~24분) 이므로, 60분이면 정상 재시도 중인 건을 오탐하지 않는다.
+# 최대 시간(~34분, transcode_timeout 900s 기준) 이므로, 60분이면 정상 재시도 중인 건을 오탐하지 않는다.
 # 환경변수 MEDIA_STALE_PROCESSING_MINUTES 로 오버라이드 가능.
 STALE_MINUTES = int(os.getenv("MEDIA_STALE_PROCESSING_MINUTES", "60"))
 
