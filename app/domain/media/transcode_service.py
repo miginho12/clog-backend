@@ -3,6 +3,7 @@
 흐름 (워커에서 호출):
 1. climbing_log 의 original_media_url 에서 원본 다운로드 (MinIO, internal)
 2. ffmpeg 로 압축 (720p CRF23, 벤치마크 근거)
+   video_mode=follow(들찍)면 대신 followcam 하위 프로세스로 크롭 렌더링 (같은 출력 설정)
 3. 압축본을 MinIO 에 업로드
 4. climbing_log 갱신: media_url=압축본, media_status=done
 5. 원본 삭제
@@ -12,7 +13,10 @@
 """
 
 import asyncio
+import json
 import os
+import signal
+import sys
 import tempfile
 import uuid
 from pathlib import Path
@@ -140,8 +144,50 @@ class TranscodeService:
             tail = (stderr or b"").decode(errors="replace")[-500:]
             raise TranscodeError(f"ffmpeg failed: {tail}")
 
+    async def _run_followcam(
+        self, src: str, dst: str, follow_target: dict[str, float] | None
+    ) -> None:
+        """들찍 렌더링 (app.domain.media.followcam 을 하위 프로세스로 실행).
+
+        출력 크기/코덱 설정은 일반 압축과 같은 transcode_* 를 그대로 쓴다.
+        start_new_session: 들찍 프로세스는 내부에서 ffmpeg 자식을 띄운다. 인코더는
+        부모가 죽으면 stdin EOF 로 스스로 끝나지만(실측), 마지막 오디오 mux ffmpeg 는
+        stdin 을 안 써서 그대로 돈다 → 타임아웃 시 프로세스 그룹째 kill.
+        """
+        s = self.settings
+        cmd = [
+            sys.executable, "-m", "app.domain.media.followcam", src, dst,
+            "--max-dim", str(s.transcode_max_dimension),
+            "--preset", s.transcode_preset,
+            "--crf", str(s.transcode_crf),
+            "--audio-bitrate", s.transcode_audio_bitrate,
+        ]
+        if follow_target is not None:
+            cmd += ["--target", json.dumps(follow_target)]
+        logger.info("followcam_start", src=src, dst=dst, seeded=follow_target is not None)
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            start_new_session=True,
+        )
+        try:
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(), timeout=s.transcode_timeout
+            )
+        except TimeoutError:
+            os.killpg(proc.pid, signal.SIGKILL)
+            await proc.wait()
+            raise TranscodeError("followcam timeout") from None
+        if proc.returncode != 0:
+            tail = (stderr or b"").decode(errors="replace")[-500:]
+            raise TranscodeError(f"followcam failed: {tail}")
+        # 마지막 줄 JSON 통계 (처리 시간/메모리/상태 분포) — 운영 관찰용 로그
+        lines = (stdout or b"").decode(errors="replace").strip().splitlines()
+        logger.info("followcam_done", stats=lines[-1] if lines else None)
+
     async def transcode(self, log_id: uuid.UUID) -> None:
-        """게시물의 원본 영상을 압축하고 상태를 갱신한다."""
+        """게시물의 원본 영상을 압축(들찍 모드면 팔로우캠 렌더링)하고 상태를 갱신한다."""
         log = await self.climbing_repo.get_by_id(log_id)
         if log is None:
             logger.warning("transcode_log_not_found", log_id=str(log_id))
@@ -161,7 +207,11 @@ class TranscodeService:
             thumb = os.path.join(tmpdir, "thumbnail.jpg")
             try:
                 self.media.download_to_file(object_key, src)
-                await self._run_ffmpeg(src, dst)
+                # 들찍 실패도 일반 압축으로 대체하지 않고 failed 처리 (사용자 결정 2026-10-12)
+                if log.video_mode == "follow":
+                    await self._run_followcam(src, dst, log.follow_target)
+                else:
+                    await self._run_ffmpeg(src, dst)
                 if not Path(dst).exists() or Path(dst).stat().st_size == 0:
                     raise TranscodeError("output empty")
                 user_prefix = object_key.rsplit("/", 1)[0]

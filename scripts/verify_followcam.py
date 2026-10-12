@@ -102,8 +102,17 @@ def main() -> int:
 
         print("\n[회전 메타데이터 (rotation=90)]")
         rot = tmpd / "rot.mp4"
-        subprocess.run(["ffmpeg", "-v", "error", "-y", "-display_rotation", "90",
-                        "-i", str(SOLO), "-c", "copy", str(rot)], check=True)
+        # -display_rotation 은 ffmpeg 6.0+ (호스트 7.1), 운영 이미지(bookworm)는 5.1 이라
+        # 구식 rotate 메타데이터로 대체. 6.0+ 는 반대로 rotate 를 무시하므로 둘 다 시도.
+        made = subprocess.run(["ffmpeg", "-v", "error", "-y", "-display_rotation", "90",
+                               "-i", str(SOLO), "-c", "copy", str(rot)], capture_output=True)
+        if made.returncode != 0:
+            subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(SOLO), "-c", "copy",
+                            "-metadata:s:v:0", "rotate=90", str(rot)], check=True)
+        rot_v = next(s for s in probe(rot)["streams"] if s["codec_type"] == "video")
+        rot_in = (rot_v.get("side_data_list") or [{}])[0].get("rotation", 0)
+        check("회전 테스트 입력 생성 (rotation 메타데이터 존재)", rot_in in (90, -90, 270),
+              f"rotation={rot_in}")
         dst = tmpd / "rot_out.mp4"
         fc.run(str(rot), str(dst), follow_target=None, max_dim=1280, preset="veryfast",
                crf=23, audio_bitrate="128k")
