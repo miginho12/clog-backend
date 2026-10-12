@@ -34,6 +34,8 @@ dependencies = [
     "minio>=7.2.20",
     "arq>=0.28.0",
     "aiosmtplib>=5.1.2",
+    "opencv-python-headless>=5.0.0.93",
+    "numpy>=2.5.4",
 ]
 
 [dependency-groups]
