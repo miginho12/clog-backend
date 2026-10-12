@@ -72,7 +72,11 @@ jobs:
         # 의존성으로만 들어오고, 이 프로젝트는 JWT_ALGORITHM=RS256 만 쓰므로
         # ecdsa.SigningKey.sign_digest() 경로 자체가 호출되지 않는다.
         # 업스트림도 side-channel 은 스코프 밖이라 fix 계획 없음(2026-07-27 확인).
-        run: uv run pip-audit --ignore-vuln PYSEC-2026-1325
+        # CVE-2026-85394: python-jose HMAC 키 검증 누락 → 공개키로 HS256 토큰 위조
+        # (알고리즘 혼동). jwt.decode 를 algorithms=[settings.jwt_algorithm] 단일
+        # 알고리즘으로 호출하고 dev/prod 모두 RS256 이라 HS256 토큰은 거부된다
+        # (app/core/security.py). 수정 버전 없음(2026-10-12 확인) → PyJWT 이전은 후속 과제.
+        run: uv run pip-audit --ignore-vuln PYSEC-2026-1325 --ignore-vuln CVE-2026-85394
 
       - name: Generate ephemeral JWT keypair
         run: |
