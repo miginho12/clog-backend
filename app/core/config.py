@@ -184,6 +184,14 @@ class Settings(BaseSettings):
     # 용량만으론 비트레이트에 따라 저화질 장시간 영상이 상한 안에 들어올 수
     # 있어(2026-07-27), ffprobe 로 실제 길이를 별도 검증한다.
     media_max_video_duration_seconds: int = Field(default=60)
+    # 분할(multipart) 업로드 — Cloudflare 가 요청 1건당 100MB 를 넘으면 413 으로 끊어
+    # (2026-10-13 실측: 99MB 통과 / 101MB 413), 큰 영상은 조각으로 나눠 올린다.
+    # 16MB: 100MB 한도 대비 충분히 작고, 느린 모바일(2Mbps)에서도 조각당 ~64s 라
+    # Cloudflare 응답 대기(100s) 안에 들어온다. MinIO(S3) 최소 조각 크기는 5MB.
+    media_multipart_part_size: int = Field(default=16 * 1024 * 1024)
+    # 조각 URL 유효시간 — 500MB 를 느린 망으로 올리는 시간을 덮도록 1시간.
+    # 만료돼도 status API 가 빠진 조각 URL 을 재발급하므로 이어 올리기 가능.
+    media_multipart_presign_expiry: int = Field(default=3600)
 
     oauth_state_ttl_seconds: int = Field(default=300)
 
