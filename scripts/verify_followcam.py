@@ -97,6 +97,24 @@ def main() -> int:
     except Exception as e:  # noqa: BLE001
         check("사람 없는 곳(천장) 탭 → 실패 없음", False, repr(e))
 
+    print("\n[출력 규격 — 피드 비율 (AutoPlayVideo 4:5 ~ 1.91:1)]")
+    pw, ph = fc.output_size(1080, 1920, 1280)
+    check("세로 9:16 → 피드 범위 비율 + 픽셀 수 기존(720x1280)±5%",
+          fc.FEED_MIN_RATIO <= pw / ph <= fc.FEED_MAX_RATIO
+          and abs(pw * ph / (720 * 1280) - 1) <= 0.05 and pw % 2 == 0 and ph % 2 == 0,
+          f"{pw}x{ph} ratio={pw / ph:.3f}")
+    check("가로 16:9 / 정사각 1:1 → 기존과 동일 (원본 비율, 긴 변 1280)",
+          fc.output_size(1920, 1080, 1280) == (1280, 720)
+          and fc.output_size(1080, 1080, 1280) == (1080, 1080))
+    p_new = fc.plan_camera(m, TAP_USER, aspect=pw / ph)
+    ratios = p_new.cw / p_new.ch
+    check("aspect 지정 → 모든 프레임 크롭 창 비율 = 출력 비율 (찌그러짐 없음)",
+          bool(np.all(np.abs(ratios - pw / ph) < 1e-6)), f"{ratios.min():.4f}~{ratios.max():.4f}")
+    p_old = fc.plan_camera(m, TAP_USER)
+    p_none = fc.plan_camera(m, TAP_USER, aspect=None)
+    check("aspect=None → 기존(원본 비율) 경로와 동일 (회귀 없음)",
+          bool(np.array_equal(p_old.x0, p_none.x0) and np.array_equal(p_old.cw, p_none.cw)))
+
     with tempfile.TemporaryDirectory() as tmp:
         tmpd = Path(tmp)
 
@@ -131,6 +149,7 @@ def main() -> int:
             capture_output=True, text=True,
         )
         check("종료 코드 0", proc.returncode == 0, proc.stderr[-200:])
+        stats: dict = {}  # 파싱 실패 시에도 아래 검사가 NameError 대신 FAIL 로 기록되도록
         try:
             stats = json.loads(proc.stdout.strip().splitlines()[-1])
             check("stdout 마지막 줄 JSON 통계", stats.get("seeded") is True, json.dumps(stats))
@@ -139,8 +158,9 @@ def main() -> int:
         info = probe(dst)
         v = next(s for s in info["streams"] if s["codec_type"] == "video")
         a = [s for s in info["streams"] if s["codec_type"] == "audio"]
-        check("H.264, 긴 변 1280 (1080x1920 → 720x1280)",
-              v["codec_name"] == "h264" and (v["width"], v["height"]) == (720, 1280),
+        check(f"H.264, 피드 비율 출력 (1080x1920 → {pw}x{ph}), stats.out_size 일치",
+              v["codec_name"] == "h264" and (v["width"], v["height"]) == (pw, ph)
+              and stats.get("out_size") == [pw, ph],
               f"{v['codec_name']} {v['width']}x{v['height']}")
         check("원본 오디오 유지 (AAC)", len(a) == 1 and a[0]["codec_name"] == "aac")
         src_dur = float(probe(MULTI)["format"]["duration"])

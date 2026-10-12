@@ -99,8 +99,11 @@ def diff_from_original(out: Path, t: float = 10.0) -> float:
 
 
 def followcam_procs() -> list[str]:
-    r = subprocess.run(["pgrep", "-af", "app.domain.media.followcam"], capture_output=True, text=True)
-    return [ln for ln in r.stdout.splitlines() if "pgrep" not in ln]
+    # 명령줄 시작(argv[0])이 python 인 프로세스만 — 그냥 "문자열 포함"으로 찾으면 이 문자열이
+    # 들어간 셸 명령(bash -c "...")까지 잡혀 오탐한다 (2026-10-12 실제 발생).
+    r = subprocess.run(["pgrep", "-af", r"^\S*python\S* -m app\.domain\.media\.followcam"],
+                       capture_output=True, text=True)
+    return r.stdout.splitlines()
 
 
 async def make_log(session: AsyncSession, user: User, key: str, **extra) -> ClimbingLog:
@@ -183,7 +186,7 @@ async def run(session: AsyncSession, tmp: Path) -> None:
     # transcode() 의 출력 파일명으로 찾는다 (자체 tempdir 를 써서 경로로는 못 찾음).
     # 주의: Pi 호스트에선 클러스터 컨테이너 프로세스도 보여, dev 워커가 동시에
     # 압축 중이면 오탐할 수 있다 (그 경우 재실행).
-    r = subprocess.run(["pgrep", "-af", r"ffmpeg.*compressed(\.video)?\.mp4"],
+    r = subprocess.run(["pgrep", "-af", r"^\S*ffmpeg .*compressed(\.video)?\.mp4"],
                        capture_output=True, text=True)
     left = [ln for ln in r.stdout.splitlines() if "pgrep" not in ln]
     check("들찍 내부 ffmpeg 잔존 없음", left == [], "; ".join(left)[:200])

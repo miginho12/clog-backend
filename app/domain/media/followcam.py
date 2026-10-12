@@ -54,6 +54,13 @@ ZOOM_MAX = 2.0
 MARGIN_W, MARGIN_H = 1.6, 1.4  # 크롭 창이 박스보다 이만큼 커야 함 (팔다리 여유)
 SIGMA_POS_S, SIGMA_ZOOM_S = 0.5, 1.0  # 양방향 가우시안 스무딩 강도 (초)
 
+# ── 출력 비율 (피드 규격) ──
+# 피드(프론트 AutoPlayVideo)는 영상 비율을 [4:5, 1.91:1] 로 clamp 하고 object-top 으로 잘라 보여준다.
+# 원본 비율로 렌더하면 세로(9:16) 들찍 영상은 피드에서 아래 30% 가 또 잘려 클라이머 하체가 잘렸다
+# (PoC 비교: 10%↑ 잘린 장면 12% → 피드 비율로 구도 0~3%). → 출력을 같은 범위로 맞춰 카메라가 그 틀로 구도.
+# ⚠ 프론트 AutoPlayVideo 의 MIN_RATIO / MAX_RATIO 와 함께 바꿀 것.
+FEED_MIN_RATIO, FEED_MAX_RATIO = 4 / 5, 1.91
+
 Box = tuple[int, int, int, int]
 
 
@@ -194,12 +201,15 @@ def _plan(
     zoom_max: float,
     hold_n: int,
     prev: tuple[float, float] | None,
+    base: tuple[float, float],
 ) -> list[Target]:
     """샘플 순서대로 클라이머를 따라가며 목표를 정한다 (역방향은 뒤집은 rows 를 넘김).
 
     prev: 직전 클라이머 위치. None 이면 첫 후보는 면적 최대(자동 선정).
+    base: 줌 1배 크롭 창 크기 (출력 비율로 원본에 들어가는 최대 영역). 줌/여유 계산 기준.
     """
     w, h = m.width, m.height
+    base_w, base_h = base
     wide = Target(w / 2, h / 2, 1.0, "wide")
     out: list[Target] = []
     last_track: Target | None = None
@@ -231,7 +241,7 @@ def _plan(
         x1, y1, x2, y2 = det.bbox
         bw, bh = max(1, x2 - x1), max(1, y2 - y1)
         # 줌 = 최대 zoom_max, 단 박스(+여유)가 크롭 창에 들어가도록 제한
-        z = max(1.0, min(zoom_max, w / (bw * MARGIN_W), h / (bh * MARGIN_H)))
+        z = max(1.0, min(zoom_max, base_w / (bw * MARGIN_W), base_h / (bh * MARGIN_H)))
         prev = det.center
         last_track = Target((x1 + x2) / 2, (y1 + y2) / 2, z, "track")
         out.append(last_track)
@@ -274,13 +284,24 @@ def _smooth(x: np.ndarray, sigma: float) -> np.ndarray:
 
 
 def plan_camera(
-    m: MotionResult, follow_target: dict[str, float] | None = None, zoom_max: float = ZOOM_MAX
+    m: MotionResult,
+    follow_target: dict[str, float] | None = None,
+    zoom_max: float = ZOOM_MAX,
+    aspect: float | None = None,
 ) -> CameraPath:
     """샘플별 목표 → 전 프레임 보간 → 스무딩 → 프레임 안으로 클램프한 크롭 창.
 
     follow_target 이 있으면 그 시점·위치의 사람을 시작점으로 앞/뒤 양방향 추적,
     없거나 그 근처에 후보가 없으면 처음부터 자동 선정(면적 최대로 시작).
+    aspect: 크롭 창(=출력) 비율. None 이면 원본 비율 (기존 동작과 동일).
     """
+    w, h = m.width, m.height
+    if aspect is None:
+        base = (float(w), float(h))
+    else:
+        base_w = min(float(w), h * aspect)
+        base = (base_w, base_w / aspect)
+
     sample_dt = 1 / SAMPLE_FPS
     flags = _static_flags(m, round(STATIC_WINDOW_S / sample_dt))
     rows = [
@@ -291,14 +312,13 @@ def plan_camera(
 
     seed = _find_seed(m, flags, follow_target) if follow_target else None
     if seed is None:
-        targets = _plan(rows, m, zoom_max, hold_n, None)
+        targets = _plan(rows, m, zoom_max, hold_n, None, base)
     else:
         i, c = seed
-        fwd = _plan(rows[i:], m, zoom_max, hold_n, c)
-        bwd = _plan(rows[: i + 1][::-1], m, zoom_max, hold_n, c)[::-1]
+        fwd = _plan(rows[i:], m, zoom_max, hold_n, c, base)
+        bwd = _plan(rows[: i + 1][::-1], m, zoom_max, hold_n, c, base)[::-1]
         targets = bwd[:-1] + fwd  # 시드 샘플은 fwd 쪽 사용
 
-    w, h = m.width, m.height
     t = np.arange(m.n_frames)
     cx = np.interp(t, m.sample_frames, [p.cx for p in targets])
     cy = np.interp(t, m.sample_frames, [p.cy for p in targets])
@@ -307,7 +327,7 @@ def plan_camera(
     cy = _smooth(cy, SIGMA_POS_S * m.fps)
     z = np.clip(_smooth(z, SIGMA_ZOOM_S * m.fps), 1.0, None)
 
-    cw, ch = w / z, h / z
+    cw, ch = base[0] / z, base[1] / z
     x0 = np.clip(cx - cw / 2, 0, w - cw)
     y0 = np.clip(cy - ch / 2, 0, h - ch)
     return CameraPath(x0, y0, cw, ch, [p.state for p in targets])
@@ -316,20 +336,41 @@ def plan_camera(
 # ─────────────────────────────────────────
 #  3. 렌더링
 # ─────────────────────────────────────────
+def output_size(w: int, h: int, max_dim: int) -> tuple[int, int]:
+    """출력 (가로, 세로).
+
+    원본 비율이 피드 범위 [FEED_MIN_RATIO, FEED_MAX_RATIO] 안이면 기존처럼 원본 비율·긴 변 max_dim.
+    범위 밖(세로 9:16 등)이면 피드 비율로 바꾸되 픽셀 수는 원본 비율 출력과 같게 유지한다
+    (확대한 원본 영역이 이미 그보다 작아 해상도를 키워도 화질 이득이 없고, 파일 크기도 유지).
+    """
+    s = min(1.0, max_dim / max(w, h))
+    ow, oh = round(w * s) // 2 * 2, round(h * s) // 2 * 2  # H.264 짝수 제약
+    ratio = w / h
+    target = min(FEED_MAX_RATIO, max(FEED_MIN_RATIO, ratio))
+    if target == ratio:
+        return ow, oh
+    # 16 배수 정렬(인코더 매크로블록) 후, 반올림으로 범위를 벗어나지 않게 보정
+    nh = round(math.sqrt(ow * oh / target) / 16) * 16
+    nw = round(nh * target / 16) * 16
+    while nw / nh < FEED_MIN_RATIO:
+        nw += 16
+    while nw / nh > FEED_MAX_RATIO:
+        nw -= 16
+    return nw, nh
+
+
 def render(
     src: str,
     dst: str,
     m: MotionResult,
     path: CameraPath,
     *,
-    max_dim: int,
+    out_size: tuple[int, int],
     preset: str,
     crf: int,
     audio_bitrate: str,
 ) -> None:
-    # 출력: 원본 비율 유지, 긴 변을 max_dim 이하로 (H.264 짝수 제약)
-    s = min(1.0, max_dim / max(m.width, m.height))
-    ow, oh = round(m.width * s) // 2 * 2, round(m.height * s) // 2 * 2
+    ow, oh = out_size
     video_only = str(Path(dst).with_suffix(".video.mp4"))
 
     enc = subprocess.Popen(
@@ -396,11 +437,15 @@ def run(
     t0 = time.perf_counter()
     m = detect_motion(src)
     t1 = time.perf_counter()
-    path = plan_camera(m, follow_target)
-    render(src, dst, m, path, max_dim=max_dim, preset=preset, crf=crf, audio_bitrate=audio_bitrate)
+    ow, oh = output_size(m.width, m.height, max_dim)
+    # 출력 비율이 원본과 같으면(피드 범위 안) None → 기존과 동일한 원본 비율 구도
+    aspect = None if abs(ow / oh - m.width / m.height) < 0.01 else ow / oh
+    path = plan_camera(m, follow_target, aspect=aspect)
+    render(src, dst, m, path, out_size=(ow, oh), preset=preset, crf=crf, audio_bitrate=audio_bitrate)
     t2 = time.perf_counter()
     return {
         "size": [m.width, m.height],
+        "out_size": [ow, oh],
         "frames": m.n_frames,
         "seeded": follow_target is not None,
         "states": {s: path.states.count(s) for s in sorted(set(path.states))},
