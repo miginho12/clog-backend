@@ -33,6 +33,19 @@ SUGGESTED_CATEGORIES = [
 GradeSystem = Literal["v_scale", "color"]
 Visibility = Literal["public", "private"]
 MediaType = Literal["video", "image"]
+VideoMode = Literal["normal", "follow"]
+
+
+class FollowTarget(BaseModel):
+    """들찍 대상 — 업로드 미리보기에서 사용자가 탭한 위치.
+
+    x, y 는 영상 화면 기준 0~1 정규화 좌표 (해상도 무관).
+    t 상한(영상 길이)은 여기서 알 수 없어 워커가 영상 길이로 보정한다.
+    """
+
+    t: float = Field(..., ge=0, examples=[3.2])
+    x: float = Field(..., ge=0, le=1, examples=[0.85])
+    y: float = Field(..., ge=0, le=1, examples=[0.45])
 
 
 class ClimbingLogBase(BaseModel):
@@ -59,6 +72,17 @@ class ClimbingLogCreate(BaseModel):
     media_type: MediaType | None = None
     media_url: str | None = Field(None, max_length=500)
     visibility: Visibility = "public"
+    video_mode: VideoMode = "normal"
+    follow_target: FollowTarget | None = None
+
+    @model_validator(mode="after")
+    def validate_follow(self) -> "ClimbingLogCreate":
+        # 들찍은 워커가 영상을 크롭 렌더링하는 기능 → 영상이 첨부된 경우만 의미가 있다
+        if self.video_mode == "follow" and not (self.media_type == "video" and self.media_url):
+            raise ValueError("들찍 모드는 영상을 첨부한 경우에만 사용할 수 있습니다")
+        if self.follow_target is not None and self.video_mode != "follow":
+            raise ValueError("follow_target 은 들찍 모드에서만 지정할 수 있습니다")
+        return self
 
     @field_validator("categories")
     @classmethod

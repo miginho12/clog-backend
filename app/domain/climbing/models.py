@@ -30,7 +30,7 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import ARRAY, UUID
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.domain.users.models import User
@@ -169,6 +169,24 @@ class ClimbingLog(Base):
         String(500),
         nullable=True,
         comment="영상 정지 썸네일 URL (video 전용, null=image 또는 백필 전)",
+    )
+    # ── 들찍(팔로우캠) 모드 ──
+    # normal: 기존 압축만. follow: 워커가 클라이머를 따라가는 가상 카메라로
+    # 크롭 렌더링 (삼각대 영상을 들고 찍은 것처럼). 이미지/미디어 없음도 normal.
+    video_mode: Mapped[Literal["normal", "follow"]] = mapped_column(
+        String(10),
+        nullable=False,
+        default="normal",
+        server_default=text("'normal'"),
+        comment="영상 처리 모드 (normal | follow=들찍)",
+    )
+    # 업로드 시 사용자가 미리보기에서 탭한 '따라갈 사람' 위치.
+    # {"t": 초, "x": 0~1, "y": 0~1} (화면 비율 정규화). null 이면 자동 선정.
+    # 워커가 통째로 읽기만 하고 조회 조건으로 쓰지 않아 컬럼 분리 대신 JSONB.
+    follow_target: Mapped[dict[str, float] | None] = mapped_column(
+        JSONB,
+        nullable=True,
+        comment="들찍 대상 탭 위치 {t, x, y} (null=자동 선정)",
     )
 
     # ── 공개 범위 ──
