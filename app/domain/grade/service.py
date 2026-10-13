@@ -10,7 +10,7 @@ DB 조회가 필요한 집계/CRUD 는 GradeService 에 위치.
 import math
 import re
 from collections import Counter, defaultdict
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Literal
 from uuid import UUID
 
@@ -54,6 +54,16 @@ FAIL_RATIO_CAP = 0.10  # 실패 총합 <= 완등 총합의 10%
 # 곡률 지수 난이도로 원시 점수가 1 ~ 106,202 범위라 그대로 노출하면
 # 카드 UI 가 깨지고 사용자가 읽을 수 없다.
 DISPLAY_SCALE = 10.0
+
+# 그레이드의 "오늘" 기준 = 한국 시간. 기록 날짜(climbed_at)를 사용자가 한국
+# 날짜로 남기므로 UTC 로 자르면 KST 00~09시에 하루가 어긋난다(하루 점수·잔디).
+# 한국은 서머타임이 없어 고정 오프셋 — 컨테이너 tzdata 유무와 무관.
+KST = timezone(timedelta(hours=9))
+
+
+def local_today() -> date:
+    return datetime.now(KST).date()
+
 
 # v_scale 표준 표기만 허용 (V + 정수). "V3+", "v3", "보라" 등은 스킵.
 _V_PATTERN = re.compile(r"V(\d+)\Z")
@@ -260,6 +270,83 @@ def aggregate_score(
     return succ_sum + fail_sum, counted
 
 
+# ── 하루 점수 평균 (ADR-068) ──
+# 개인 종합점수(V/컬러 트랙, 추이, 프로필)용. 암장 랭킹은 aggregate_score 유지.
+#
+# top-N 합(ADR-045)은 새 등급 첫 완등이 거의 반영되지 않았다: 시도 효율
+# 페널티(10트=0.30배)가 한 단계 난이도 배율(중하위 1.5~3.6배)을 상쇄해
+# 파→남 15트 완등은 상위 10개에 들지도 못한다(+0점). 점수는 새 등급을
+# 10개 채워야 올라 "높은 난이도일수록 완만하다"는 체감으로 나타났다.
+
+# 등급 환산 단위: 가상 rank(vr, 0~VIRTUAL_SPAN) 1 = 100점.
+# 10색 암장이면 한 단계 = 100점, 최고 난이도는 짐 색 개수와 무관하게 900점(ADR-041 정규화).
+STEP_POINTS = 100.0
+DAY_TOP_K = 3  # 하루 점수 = 그날 완등 상위 3개 평균 (워밍업 기록해도 손해 없음)
+FLASH_BONUS = 20.0  # 1트 완등 보너스 — 시도 횟수는 나누지 않고 플래시만 보상
+RECENT_DAYS = 10  # 종합 = 최근 운동일 10일 중
+KEEP_BEST_DAYS = 7  # 잘한 7일 평균 (컨디션 나쁜 날 기록을 숨길 이유 제거)
+MAX_AGE_DAYS = 90  # 90일 넘은 날은 제외 (장기 휴식이면 점수 없음)
+
+
+def grade_points(ratio: float) -> float:
+    """비율(0~1) → 등급 환산 점수. 선형이라 한 단계 오를 때 항상 같은 폭."""
+    return min(1.0, max(0.0, ratio)) * VIRTUAL_SPAN * STEP_POINTS
+
+
+def compute_day_score(sends: list[tuple[float, int]]) -> float | None:
+    """하루 점수 (ADR-068). sends: 그날 완등 기록의 (ratio, attempts).
+
+    상위 DAY_TOP_K 개(1트 보너스 포함)의 평균. 완등이 없으면 None
+    (실패만 있는 날은 점수 대상이 아니다 — 실패는 진척도에서만 쓴다).
+    """
+    values = sorted(
+        (
+            grade_points(ratio) + (FLASH_BONUS if attempts <= 1 else 0.0)
+            for ratio, attempts in sends
+        ),
+        reverse=True,
+    )[:DAY_TOP_K]
+    if not values:
+        return None
+    return sum(values) / len(values)
+
+
+def aggregate_daily_average(
+    logs: list[tuple[float, bool, int, date]],
+    today: date,
+) -> tuple[float, int, int]:
+    """종합점수 = 최근 운동일의 하루 점수 평균 (ADR-068).
+
+    logs: (ratio, is_success, attempts, climbed_at). 두 트랙 공용(ratio 축).
+    today 이후 기록(추이 스냅샷 기준)과 MAX_AGE_DAYS 초과 기록은 제외.
+
+    반환: (score, counted_days, counted_logs)
+      counted_logs = 점수에 실제 반영된 완등 기록 수 (선택된 날들의 상위 K개)
+      반영할 날이 없으면 (0.0, 0, 0)
+    """
+    oldest = today - timedelta(days=MAX_AGE_DAYS)
+    by_day: defaultdict[date, list[tuple[float, int]]] = defaultdict(list)
+    for ratio, is_success, attempts, climbed in logs:
+        if not is_success or climbed > today or climbed <= oldest:
+            continue
+        by_day[climbed].append((ratio, attempts if attempts > 0 else 1))
+
+    recent = sorted(by_day, reverse=True)[:RECENT_DAYS]
+    scored: list[tuple[float, int]] = []  # (하루 점수, 반영 기록 수)
+    for day in recent:
+        s = compute_day_score(by_day[day])
+        if s is not None:
+            scored.append((s, min(len(by_day[day]), DAY_TOP_K)))
+    best = sorted(scored, key=lambda x: x[0], reverse=True)[:KEEP_BEST_DAYS]
+    if not best:
+        return 0.0, 0, 0
+    return (
+        sum(s for s, _ in best) / len(best),
+        len(best),
+        sum(n for _, n in best),
+    )
+
+
 def week_date_range(year: int, week: int) -> tuple[date, date]:
     """ISO 주(year, week) → (월요일, 일요일) 날짜 범위 (구현 7: 기간 랭킹).
 
@@ -294,10 +381,10 @@ class GradeService:
 
     async def compute_v_scale_grade(self, user_id: UUID) -> VScaleGrade:
         logs = await self.repo.list_user_logs_for_grading(user_id, "v_scale")
-        today = datetime.now(UTC).date()
+        today = local_today()
 
-        successes: list[tuple[float, int, date]] = []
-        failures: list[tuple[float, int, date]] = []
+        # (ratio, is_success, attempts, climbed_at) — 종합점수(ADR-068)
+        graded: list[tuple[float, bool, int, date]] = []
         success_v: list[int] = []
         # (v, attempts, climbed_at) — 진척도용 (ADR-050)
         success_v_details: list[tuple[int, int, date]] = []
@@ -305,18 +392,16 @@ class GradeService:
             v = parse_v_scale(log.grade_raw)
             if v is None:
                 continue
-            entry = (v_scale_difficulty(v), log.attempts, log.climbed_at)
+            graded.append(
+                (v / V_SCALE_MAX, log.is_success, log.attempts, log.climbed_at)
+            )
             if log.is_success:
-                successes.append(entry)
                 success_v.append(v)
                 success_v_details.append((v, log.attempts, log.climbed_at))
-            else:
-                failures.append(entry)
 
-        raw_score, counted = aggregate_score(
-            successes=successes, failures=failures, today=today
+        comprehensive_score, counted_days, counted = aggregate_daily_average(
+            graded, today
         )
-        comprehensive_score = display_score(raw_score)
 
         top_rating = max(success_v) if success_v else None
         top_rating_label = f"V{top_rating}" if top_rating is not None else None
@@ -342,30 +427,22 @@ class GradeService:
             top_rating=top_rating,
             top_rating_label=top_rating_label,
             counted_logs=counted,
+            counted_days=counted_days,
             next_grade_label=next_grade_label,
             readiness_pct=readiness_pct,
         )
 
-    async def compute_grade_timeline(
-        self, user_id: UUID, weeks: int = 12
-    ) -> list[dict[str, Any]]:
-        """주별 종합 그레이드 점수 추이 (v_scale + color 통합).
+    async def _graded_logs(
+        self, user_id: UUID
+    ) -> tuple[list[tuple[float, bool, int, date]], list[ClimbingLog]]:
+        """두 트랙 기록을 하나의 ratio 축으로 파싱 (추이·일별 활동 공용).
 
-        v_scale·color 두 트랙 로그를 하나의 난이도 스케일로 합쳐
-        각 주말(스냅샷) 시점의 종합 점수를 계산한다.
-        - v_scale: v_scale_difficulty(v)   (ADR-046 곡률 지수)
-        - color:   color_difficulty(ratio) (동일 곡률, 같은 축)
-        - 각 시점 이후 로그 제외, today=스냅샷일 로 반감기 반영
-        → 실력 성장 곡선. 안 오르면 반감기로 서서히 하락.
-
-        두 트랙을 합칠 수 있는 이유(ADR-046): 둘 다 ratio 로 정규화한 뒤
-        같은 곡률 지수를 태우므로 최고 등급이 동일한 값(≈106,202)이 된다.
-        선형 시절에는 v_scale 최대 18 / color 최대 11 로 축이 달랐다.
-
-        반환: [{"date", "score", "count"}, ...]
+        반환: (parsed, 원본 전체)
+          parsed = (ratio, is_success, attempts, climbed_at) — 등급을 해석할 수
+          있는 기록만 (비표준 V 표기·미등록 짐·짐에 없는 색은 제외)
+          원본 전체 = 해석 여부와 무관한 두 트랙 기록 (활동량 집계용)
         """
-        # (difficulty, climbed_at, is_success, attempts) 로 통일해 미리 파싱
-        parsed: list[tuple[float, date, bool, int]] = []
+        parsed: list[tuple[float, bool, int, date]] = []
 
         # 1) v_scale 로그
         v_logs = await self.repo.list_user_logs_for_grading(user_id, "v_scale")
@@ -374,15 +451,10 @@ class GradeService:
             if v is None:
                 continue
             parsed.append(
-                (
-                    v_scale_difficulty(v),
-                    log.climbed_at,
-                    log.is_success,
-                    log.attempts,
-                )
+                (v / V_SCALE_MAX, log.is_success, log.attempts, log.climbed_at)
             )
 
-        # 2) color 로그 (짐 색 순서 → ratio → difficulty)
+        # 2) color 로그 (짐 색 순서 → rank → ratio)
         c_logs = await self.repo.list_user_logs_for_grading(user_id, "color")
         systems = await self.repo.get_systems_map(
             log.gym_name for log in c_logs if log.gym_name
@@ -395,41 +467,84 @@ class GradeService:
             if rank is None:
                 continue
             ratio = self.repo.rank_to_ratio(system, rank)
-            parsed.append(
-                (
-                    color_difficulty(ratio),
-                    log.climbed_at,
-                    log.is_success,
-                    log.attempts,
-                )
-            )
+            parsed.append((ratio, log.is_success, log.attempts, log.climbed_at))
 
-        today = datetime.now(UTC).date()
+        return parsed, v_logs + c_logs
+
+    async def compute_daily_activity(
+        self, user_id: UUID, days: int = 182
+    ) -> list[dict[str, Any]]:
+        """일별 활동 (잔디 UI용, ADR-068). 최근 days 일 중 기록이 있는 날만.
+
+        반환: [{"date", "total", "success", "day_score"}, ...] 날짜 오름차순
+          total/success = 그날 기록·완등 수 (등급 해석 여부 무관 — 꾸준함 지표)
+          day_score     = 하루 점수 (완등이 없거나 해석 불가면 None)
+        빈 날은 응답하지 않는다 — 그리드는 프론트가 날짜 범위로 채운다.
+        """
+        today = local_today()
+        start = today - timedelta(days=days - 1)
+        parsed, raw = await self._graded_logs(user_id)
+
+        totals: Counter[date] = Counter()
+        successes: Counter[date] = Counter()
+        for log in raw:
+            if start <= log.climbed_at <= today:
+                totals[log.climbed_at] += 1
+                if log.is_success:
+                    successes[log.climbed_at] += 1
+
+        sends: defaultdict[date, list[tuple[float, int]]] = defaultdict(list)
+        for ratio, ok, attempts, climbed in parsed:
+            if ok and start <= climbed <= today:
+                sends[climbed].append((ratio, attempts if attempts > 0 else 1))
+
+        result: list[dict[str, Any]] = []
+        for day in sorted(totals):
+            score = compute_day_score(sends[day]) if day in sends else None
+            result.append(
+                {
+                    "date": day.isoformat(),
+                    "total": totals[day],
+                    "success": successes[day],
+                    "day_score": round(score, 1) if score is not None else None,
+                }
+            )
+        return result
+
+    async def compute_grade_timeline(
+        self, user_id: UUID, weeks: int = 12
+    ) -> list[dict[str, Any]]:
+        """주별 종합 그레이드 점수 추이 (v_scale + color 통합).
+
+        v_scale·color 두 트랙 로그를 하나의 ratio 축(0~1)으로 합쳐
+        각 주말(스냅샷) 시점의 종합 점수(하루 점수 평균, ADR-068)를 계산한다.
+        - v_scale: v / V_SCALE_MAX,  color: 짐 내 rank / (N-1)
+        - 각 시점 이후 로그 제외, 스냅샷 기준 최근 MAX_AGE_DAYS 일만
+        → 실력 성장 곡선. 90일 넘게 쉬면 0(기록 없음).
+
+        두 트랙을 합칠 수 있는 이유(ADR-041/046): 둘 다 ratio 로 정규화하므로
+        최고 등급이 같은 점수(900)가 된다.
+
+        반환: [{"date", "score", "count", "days"}, ...]
+        """
+        parsed, _ = await self._graded_logs(user_id)
+
+        today = local_today()
         points: list[dict[str, Any]] = []
         for i in range(weeks):
             snapshot = today - timedelta(weeks=(weeks - 1 - i))
 
-            # 스냅샷 시점까지의 로그만, 완등/실패를 분리해 공용 집계에 위임
-            successes = [
-                (diff, att, climbed)
-                for (diff, climbed, succ, att) in parsed
-                if climbed <= snapshot and succ
-            ]
-            failures = [
-                (diff, att, climbed)
-                for (diff, climbed, succ, att) in parsed
-                if climbed <= snapshot and not succ
-            ]
-            raw, counted = aggregate_score(
-                successes=successes, failures=failures, today=snapshot
+            # 스냅샷 시점 기준 종합점수 (스냅샷 이후 기록은 집계 함수가 제외)
+            score, counted_days, counted = aggregate_daily_average(
+                parsed, snapshot
             )
-            score = display_score(raw)
 
             points.append(
                 {
                     "date": snapshot.isoformat(),
                     "score": round(score, 2),
                     "count": counted,
+                    "days": counted_days,
                 }
             )
         return points
@@ -481,14 +596,14 @@ class GradeService:
                 raise GymGradeSystemNotFound(base_gym)
 
         logs = await self.repo.list_user_logs_for_grading(user_id, "color")
-        today = datetime.now(UTC).date()
+        today = local_today()
 
         systems = await self.repo.get_systems_map(
             log.gym_name for log in logs if log.gym_name
         )
 
-        successes: list[tuple[float, int, date]] = []
-        failures: list[tuple[float, int, date]] = []
+        # (ratio, is_success, attempts, climbed_at) — 종합점수(ADR-068)
+        graded: list[tuple[float, bool, int, date]] = []
         gym_counter: Counter[str] = Counter()
         # (ratio, attempts, climbed_at, gym_name, grade_raw) — 진척도(ADR-050) +
         # 실제 최고 완등 기록 원본 추적 + 암장별 환산(difficulty_offset) 계산용
@@ -504,20 +619,16 @@ class GradeService:
             if rank is None:
                 continue
             ratio = self.repo.rank_to_ratio(system, rank)
-            entry = (color_difficulty(ratio), log.attempts, log.climbed_at)
+            graded.append((ratio, log.is_success, log.attempts, log.climbed_at))
             if log.is_success:
-                successes.append(entry)
                 success_details.append(
                     (ratio, log.attempts, log.climbed_at, gym_name, log.grade_raw)
                 )
-            else:
-                failures.append(entry)
             gym_counter[gym_name] += 1
 
-        raw_score, counted = aggregate_score(
-            successes=successes, failures=failures, today=today
+        comprehensive_score, counted_days, counted = aggregate_daily_average(
+            graded, today
         )
-        comprehensive_score = display_score(raw_score)
 
         # 실제로 완등한 기록 중 ratio 최대인 것 하나 (동률이면 최근 것).
         # base_gym 미지정 시(기본/프로필 최고등급) 이 기록의 원본 암장·색을
@@ -602,6 +713,7 @@ class GradeService:
             base_gym=resolved_base_gym,
             top_rating_label=top_rating_label,
             counted_logs=counted,
+            counted_days=counted_days,
             next_grade_label=next_grade_label,
             readiness_pct=readiness_pct,
         )
@@ -619,8 +731,9 @@ class GradeService:
     ) -> GymRankingResponse:
         """이 암장(지점)의 공개 리더보드.
 
-        compute_color_grade 와 같은 산식(aggregate_score)을 쓰되, 범위를
-        "이 암장 기록만"으로 좁혀 여러 유저를 비교한다. 뷰어 무관 —
+        개인 종합점수(하루 점수 평균, ADR-068)와 달리 기존 top-N 합 산식
+        (aggregate_score, ADR-045~049)을 유지한다 — 랭킹 개편은 별도 결정.
+        범위를 "이 암장 기록만"으로 좁혀 여러 유저를 비교한다. 뷰어 무관 —
         공개 계정의 공개 글만 대상 (compute_color_grade 의 본인 private
         포함과 다름, list_public_color_logs_for_gym 참고).
 
@@ -656,7 +769,7 @@ class GradeService:
         logs = await self.repo.list_public_color_logs_for_gym(
             gym_name, start_date=start_date, end_date=end_date
         )
-        today = datetime.now(UTC).date()
+        today = local_today()
 
         by_user: defaultdict[UUID, list[ClimbingLog]] = defaultdict(list)
         for log in logs:

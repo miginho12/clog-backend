@@ -2,6 +2,8 @@
 
 엔드포인트:
 - GET /me/grade   본인 그레이드 (v_scale + color 두 트랙). 인증 필수.
+- GET /me/grade/timeline   주별 종합점수 추이.
+- GET /me/grade/activity   일별 활동 (잔디 UI).
 
 쿼리:
 - base_gym (선택): color 탑레이팅 색을 어느 짐 기준으로 표시할지.
@@ -16,6 +18,7 @@ from fastapi import APIRouter, Query
 from app.api.dependencies import CurrentUserDep
 from app.domain.grade.dependencies import GradeServiceDep
 from app.domain.grade.schemas import (
+    DailyActivity,
     MeGradeResponse,
     ProfileStats,
     TimelinePoint,
@@ -65,6 +68,26 @@ async def get_my_grade_timeline(
 ) -> list[TimelinePoint]:
     points = await service.compute_grade_timeline(user.id, weeks=weeks)
     return [TimelinePoint(**p) for p in points]
+
+
+@router.get(
+    "/grade/activity",
+    response_model=list[DailyActivity],
+    summary="내 일별 활동 (잔디)",
+    description=(
+        "최근 N일 중 기록이 있는 날의 기록·완등 수와 하루 점수. "
+        "빈 날은 응답에 없다 (그리드는 클라이언트가 채움)."
+    ),
+)
+async def get_my_grade_activity(
+    user: CurrentUserDep,
+    service: GradeServiceDep,
+    days: Annotated[
+        int, Query(ge=28, le=371, description="조회 일수 (기본 182 = 26주)")
+    ] = 182,
+) -> list[DailyActivity]:
+    rows = await service.compute_daily_activity(user.id, days=days)
+    return [DailyActivity(**r) for r in rows]
 
 
 # 프로필 통계는 /users prefix (타인 조회 가능, 인증 불필요)

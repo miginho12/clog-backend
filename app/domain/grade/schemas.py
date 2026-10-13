@@ -21,6 +21,7 @@ class VScaleGrade(BaseModel):
     top_rating: int | None
     top_rating_label: str | None
     counted_logs: int
+    counted_days: int = 0  # 종합점수에 반영된 운동일 수 (ADR-068)
     # 다음 등급 도전 진척도 (ADR-050)
     next_grade_label: str | None = None
     readiness_pct: float | None = None
@@ -44,6 +45,7 @@ class ColorGrade(BaseModel):
     base_gym: str | None
     top_rating_label: str | None
     counted_logs: int
+    counted_days: int = 0  # 종합점수에 반영된 운동일 수 (ADR-068)
     # 다음 등급 도전 진척도 (ADR-050). 점수와 달리 '깰 수 있는가' 를 잰다.
     next_grade_label: str | None = None
     readiness_pct: float | None = None
@@ -205,6 +207,16 @@ class TimelinePoint(BaseModel):
     date: str  # YYYY-MM-DD
     score: float
     count: int  # 그 시점 점수에 반영된 기록 수
+    days: int = 0  # 그 시점 점수에 반영된 운동일 수 (ADR-068)
+
+
+class DailyActivity(BaseModel):
+    """일별 활동 한 칸 (잔디 UI, ADR-068). 기록이 있는 날만 응답."""
+
+    date: str  # YYYY-MM-DD
+    total: int  # 그날 기록 수
+    success: int  # 그날 완등 수
+    day_score: float | None = None  # 하루 점수 (완등 없으면 None)
 
 
 class ProfileStats(BaseModel):
