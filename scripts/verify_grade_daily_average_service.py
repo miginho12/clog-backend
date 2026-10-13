@@ -156,6 +156,8 @@ async def run(session: AsyncSession) -> None:
     paths = {getattr(r, "path", "") for r in fastapi_app.routes}
     check("라우트 GET /me/grade/activity 등록", "/me/grade/activity" in paths)
 
+    await offset_case(session, crepo, grepo, service, today)
+
     print("\n[암장 랭킹 — 기존 산식 유지]")
     ranking = await service.compute_gym_ranking(gym.gym_name)
     me = next((e for e in ranking.entries if e.user.id == user.id), None)
@@ -168,6 +170,49 @@ async def run(session: AsyncSession) -> None:
     check("랭킹 점수 = display_score(aggregate_score) (옛 top-N 합)",
           me is not None and close(me.score, display_score(raw)),
           f"{me.score if me else None:.2f} vs {display_score(raw):.2f}")
+
+
+async def offset_case(session, crepo, grepo, service, today) -> None:  # noqa: ANN001
+    """암장 보정치(difficulty_offset)가 개인 점수에만 반영되는지 (ADR-068 B안)."""
+    print("\n[암장 보정치 반영]")
+    uid = uuid.uuid4().hex[:8]
+    u = User(email=f"offset_{uid}@clog.test", nickname=f"offset_{uid}",
+             auth_provider="local", email_verified=True, is_public=True)
+    session.add(u)
+    await session.flush()
+    easy = await grepo.create(gym_name=f"쉬운짐_{uid}", color_order=COLORS[:9],
+                              created_by=u.id, is_official=True, difficulty_offset=-0.4)
+    hard = await grepo.create(gym_name=f"어려운짐_{uid}", color_order=COLORS + ["흰"],
+                              created_by=u.id, is_official=True, difficulty_offset=0.3)
+    await session.flush()
+    for g, days_ago in [(easy, 3), (hard, 1)]:
+        await crepo.create(
+            user_id=u.id, grade_raw=g.color_order[-1], grade_system="color",
+            gym_name=g.gym_name, categories=[], attempts=1, is_success=True,
+            visibility="public", climbed_at=today - timedelta(days=days_ago),
+        )
+    await session.flush()
+    cg = await service.compute_color_grade(u.id)
+    # 쉬운짐 최고색 (1.0-0.4)·900+20 = 560, 어려운짐 최고색 1.3·900+20 = 1190
+    check("최고 색끼리도 암장 난이도만큼 점수 차 (560 / 1190 → 평균 875)",
+          close(cg.comprehensive_score, 875.0), f"{cg.comprehensive_score:.2f}")
+    act = {a["date"]: a["day_score"]
+           for a in await service.compute_daily_activity(u.id, days=28)}
+    check("잔디 하루 점수에도 반영 (560 / 1190)",
+          act.get((today - timedelta(days=3)).isoformat()) == 560
+          and act.get((today - timedelta(days=1)).isoformat()) == 1190, f"{act}")
+    tl = await service.compute_grade_timeline(u.id, weeks=4)
+    check("추이에도 반영", close(tl[-1]["score"], 875.0), f"{tl[-1]['score']}")
+    check("최고 등급은 보정 없이 실제 색 (최근 동률 → 어려운짐 최고색)",
+          cg.top_rating_label == hard.color_order[-1] and cg.base_gym == hard.gym_name,
+          f"{cg.base_gym} {cg.top_rating_label}")
+    ranking = await service.compute_gym_ranking(hard.gym_name)
+    me = next(e for e in ranking.entries if e.user.id == u.id)
+    raw, _ = aggregate_score(
+        successes=[(color_difficulty(1.0), 1, today - timedelta(days=1))],
+        failures=[], today=today)
+    check("암장 랭킹은 보정 없이 기존 산식", close(me.score, display_score(raw)),
+          f"{me.score:.2f}")
 
 
 async def main() -> int:

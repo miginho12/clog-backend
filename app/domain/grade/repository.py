@@ -296,12 +296,23 @@ class GradeRepository:
         """이 짐의 자기 ratio를 관리자가 설정한 difficulty_offset으로 보정해
         "실제 체감 난이도" 기준 정규화 ratio로 바꾼다 (2026-07-27 QA-#5).
 
-        암장 간 환산(ratio_to_color 투영)에서만 쓴다 — 점수 집계나 실제
-        완등 기록 표시(QA-#4)에는 적용하지 않는다(그건 있는 그대로가 맞음).
+        암장 간 환산(ratio_to_color 투영)에서 쓴다 — 실제 완등 기록 표시
+        (QA-#4)에는 적용하지 않는다(그건 있는 그대로가 맞음). 개인 종합점수는
+        위쪽을 자르지 않는 score_ratio 를 쓴다(ADR-068).
         offset이 양수(실제로 더 어려운 암장)면 정규화 ratio를 올려서, 다른
         (더 쉬운) 암장으로 투영할 때 더 높은 색이 나오게 한다.
         """
         return max(0.0, min(1.0, ratio + system.difficulty_offset))
+
+    @staticmethod
+    def score_ratio(system: GymGradeSystem, ratio: float) -> float:
+        """개인 종합점수용 ratio = 자기 ratio + difficulty_offset (ADR-068).
+
+        normalize_ratio(환산용)와 달리 위쪽을 1.0 으로 자르지 않는다 — 자르면
+        어려운 암장(offset>0)의 위쪽 색 여러 개가 같은 점수가 돼 구분이 사라진다.
+        아래쪽만 0 으로 자른다(음수 점수 방지).
+        """
+        return max(0.0, ratio + system.difficulty_offset)
 
     @staticmethod
     def denormalize_ratio(system: GymGradeSystem, normalized_ratio: float) -> float:

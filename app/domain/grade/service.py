@@ -279,7 +279,8 @@ def aggregate_score(
 # 10개 채워야 올라 "높은 난이도일수록 완만하다"는 체감으로 나타났다.
 
 # 등급 환산 단위: 가상 rank(vr, 0~VIRTUAL_SPAN) 1 = 100점.
-# 10색 암장이면 한 단계 = 100점, 최고 난이도는 짐 색 개수와 무관하게 900점(ADR-041 정규화).
+# 10색 암장이면 한 단계 = 100점, 최고 색은 색 개수와 무관하게 900점(ADR-041 정규화)
+# + 암장 보정치(difficulty_offset × 900, 관리자 설정)로 암장 간 실제 난이도 차를 반영.
 STEP_POINTS = 100.0
 DAY_TOP_K = 3  # 하루 점수 = 그날 완등 상위 3개 평균 (워밍업 기록해도 손해 없음)
 FLASH_BONUS = 20.0  # 1트 완등 보너스 — 시도 횟수는 나누지 않고 플래시만 보상
@@ -289,8 +290,12 @@ MAX_AGE_DAYS = 90  # 90일 넘은 날은 제외 (장기 휴식이면 점수 없�
 
 
 def grade_points(ratio: float) -> float:
-    """비율(0~1) → 등급 환산 점수. 선형이라 한 단계 오를 때 항상 같은 폭."""
-    return min(1.0, max(0.0, ratio)) * VIRTUAL_SPAN * STEP_POINTS
+    """비율 → 등급 환산 점수. 선형이라 한 단계 오를 때 항상 같은 폭.
+
+    암장 보정치(score_ratio)로 1.0 을 넘을 수 있어 위쪽은 자르지 않는다
+    (예: 더클라임 +0.3 최고색 = 1170). 아래만 0.
+    """
+    return max(0.0, ratio) * VIRTUAL_SPAN * STEP_POINTS
 
 
 def compute_day_score(sends: list[tuple[float, int]]) -> float | None:
@@ -466,7 +471,10 @@ class GradeService:
             rank = self.repo.color_to_rank(system, log.grade_raw)
             if rank is None:
                 continue
-            ratio = self.repo.rank_to_ratio(system, rank)
+            # 점수 축: 암장 보정치 반영 (ADR-068 — 어려운 암장 완등이 더 높게)
+            ratio = self.repo.score_ratio(
+                system, self.repo.rank_to_ratio(system, rank)
+            )
             parsed.append((ratio, log.is_success, log.attempts, log.climbed_at))
 
         return parsed, v_logs + c_logs
@@ -619,7 +627,15 @@ class GradeService:
             if rank is None:
                 continue
             ratio = self.repo.rank_to_ratio(system, rank)
-            graded.append((ratio, log.is_success, log.attempts, log.climbed_at))
+            # 종합점수만 암장 보정치 반영. 최고 등급·진척도는 실제 색(ratio) 그대로
+            graded.append(
+                (
+                    self.repo.score_ratio(system, ratio),
+                    log.is_success,
+                    log.attempts,
+                    log.climbed_at,
+                )
+            )
             if log.is_success:
                 success_details.append(
                     (ratio, log.attempts, log.climbed_at, gym_name, log.grade_raw)

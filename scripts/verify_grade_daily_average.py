@@ -58,6 +58,9 @@ def main() -> int:
     check("최고 난이도 = 900 (색 개수 무관)",
           grade_points(1.0) == 900 and abs(grade_points(7 / 7) - 900) < 1e-9)
     check("8색 암장 한 단계 ≈ 128.6점", abs(grade_points(1 / 7) - 900 / 7) < 1e-9)
+    check("암장 보정으로 1.0 초과 → 위쪽 자르지 않음 (1.3 → 1170)",
+          abs(grade_points(1.3) - 1170) < 1e-9)
+    check("음수 위치는 0점", grade_points(-0.1) == 0)
 
     print("\n[하루 점수]")
     base = day(("파", 2), ("파", 2), ("파", 2))
