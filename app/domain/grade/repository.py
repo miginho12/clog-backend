@@ -6,7 +6,8 @@
 """
 
 from collections.abc import Iterable
-from datetime import date
+from datetime import UTC, date, datetime
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import ColumnElement, func, or_, select, update
@@ -14,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.domain.climbing.models import ClimbingLog
-from app.domain.grade.models import GymGradeSystem
+from app.domain.grade.models import GymGradeSystem, GymGradeSystemChange
 from app.domain.users.models import User
 
 
@@ -154,6 +155,61 @@ class GradeRepository:
         )
         system.gym_name = new_gym_name
         await self.session.flush()
+
+    # ── 변경 이력 (ADR-069) ──
+
+    @staticmethod
+    def snapshot(system: GymGradeSystem) -> dict[str, Any]:
+        """점수·환산에 영향을 주는 필드만 JSON 으로 (이력 before/after 비교용)."""
+        return {
+            "gym_name": system.gym_name,
+            "brand_name": system.brand_name,
+            "color_order": list(system.color_order),
+            "is_official": system.is_official,
+            "difficulty_offset": system.difficulty_offset,
+        }
+
+    async def add_change(
+        self,
+        *,
+        system_id: UUID,
+        gym_name: str,
+        action: str,
+        changed_by: UUID | None,
+        before: dict[str, Any] | None,
+        after: dict[str, Any] | None,
+        reason: str | None = None,
+    ) -> GymGradeSystemChange | None:
+        """이력 1건 추가. update/sync 인데 값이 같으면 남기지 않고 None."""
+        if action in ("update", "sync") and before == after:
+            return None
+        change = GymGradeSystemChange(
+            # DB now() 는 트랜잭션 시작 시각이라 한 트랜잭션의 여러 건(동기화 등)이
+            # 같은 시각이 돼 최신순 정렬이 불안정 → 기록 순간의 시각을 직접 넣는다
+            created_at=datetime.now(UTC),
+            gym_system_id=system_id,
+            gym_name=gym_name,
+            action=action,
+            changed_by=changed_by,
+            before=before,
+            after=after,
+            reason=reason,
+        )
+        self.session.add(change)
+        await self.session.flush()
+        return change
+
+    async def list_changes(
+        self, system_id: UUID, limit: int = 50
+    ) -> list[GymGradeSystemChange]:
+        """이 암장의 변경 이력, 최신순."""
+        result = await self.session.execute(
+            select(GymGradeSystemChange)
+            .where(GymGradeSystemChange.gym_system_id == system_id)
+            .order_by(GymGradeSystemChange.created_at.desc())
+            .limit(limit)
+        )
+        return list(result.scalars().all())
 
     async def delete(self, system: GymGradeSystem) -> None:
         """hard delete (GymGradeSystem 은 soft-delete 미지원 모델)."""

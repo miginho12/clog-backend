@@ -14,7 +14,7 @@ from app.domain.climbing.models import ClimbingLog  # noqa: F401
 from app.domain.comment_likes.models import CommentLike  # noqa: F401
 from app.domain.comments.models import Comment  # noqa: F401
 from app.domain.follows.models import Follow  # noqa: F401
-from app.domain.grade.models import GymGradeSystem  # noqa: F401
+from app.domain.grade.models import GymGradeSystem, GymGradeSystemChange  # noqa: F401
 from app.domain.likes.models import Like  # noqa: F401
 from app.domain.notifications.models import Notification  # noqa: F401
 from app.domain.users.models import User  # noqa: F401

@@ -18,14 +18,15 @@ climbing_logs.gym_name 도 같은 트랜잭션에서 일괄 갱신되어 기존 
 그레이드 산정이 깨지지 않는다.
 """
 
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Query, status
 
-from app.api.dependencies import CurrentUserDep
+from app.api.dependencies import AdminUserDep, CurrentUserDep
 from app.domain.grade.dependencies import GradeServiceDep
 from app.domain.grade.schemas import (
+    GymGradeSystemChangeResponse,
     GymGradeSystemCreate,
     GymGradeSystemResponse,
     GymGradeSystemUpdate,
@@ -54,6 +55,7 @@ async def create_gym_system(
         is_official=payload.is_official,
         brand_name=payload.brand_name,
         difficulty_offset=payload.difficulty_offset,
+        reason=payload.reason,
     )
     return GymGradeSystemResponse.model_validate(system)
 
@@ -142,6 +144,7 @@ async def update_gym_system(
         brand_name=payload.brand_name,
         difficulty_offset=payload.difficulty_offset,
         gym_name=payload.gym_name,
+        reason=payload.reason,
     )
     return GymGradeSystemResponse.model_validate(system)
 
@@ -155,7 +158,28 @@ async def delete_gym_system(
     system_id: UUID,
     user: CurrentUserDep,
     service: GradeServiceDep,
+    reason: Annotated[
+        str | None, Query(max_length=200, description="삭제 사유 (선택, 이력에 남음)")
+    ] = None,
 ) -> None:
     await service.delete_gym_system(
-        system_id=system_id, user_id=user.id, is_admin=user.is_admin
+        system_id=system_id, user_id=user.id, is_admin=user.is_admin, reason=reason
     )
+
+
+@router.get(
+    "/{system_id}/history",
+    response_model=list[GymGradeSystemChangeResponse],
+    summary="짐 색체계 변경 이력 (admin)",
+    description=(
+        "색 순서·보정치 등 변경 이력 최신순 50건 (ADR-069). "
+        "보정치는 개인 종합점수를 직접 바꾸므로 원인 추적용. 삭제된 암장도 조회 가능."
+    ),
+)
+async def get_gym_system_history(
+    system_id: UUID,
+    admin: AdminUserDep,
+    service: GradeServiceDep,
+) -> list[GymGradeSystemChangeResponse]:
+    changes = await service.list_gym_system_changes(system_id)
+    return [GymGradeSystemChangeResponse.model_validate(c) for c in changes]

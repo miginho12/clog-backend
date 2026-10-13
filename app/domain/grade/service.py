@@ -24,7 +24,7 @@ from app.domain.grade.exceptions import (
     GymGradeSystemNotFoundById,
     InvalidRankingPeriod,
 )
-from app.domain.grade.models import GymGradeSystem
+from app.domain.grade.models import GymGradeSystem, GymGradeSystemChange
 from app.domain.grade.repository import GradeRepository
 from app.domain.grade.schemas import (
     ColorGrade,
@@ -865,6 +865,7 @@ class GradeService:
         is_official: bool = False,
         brand_name: str | None = None,
         difficulty_offset: float = 0.0,
+        reason: str | None = None,
     ) -> GymGradeSystem:
         """짐 색체계 등록.
 
@@ -895,6 +896,16 @@ class GradeService:
             brand_name=brand_name,
             difficulty_offset=offset,
         )
+        # 변경 이력 (ADR-069) — 등록과 같은 트랜잭션
+        await self.repo.add_change(
+            system_id=system.id,
+            gym_name=system.gym_name,
+            action="create",
+            changed_by=user_id,
+            before=None,
+            after=self.repo.snapshot(system),
+            reason=reason,
+        )
         await self.session.commit()
         await self.session.refresh(system)  # commit 후 expire 방지 (응답 직렬화용)
         return system
@@ -910,6 +921,7 @@ class GradeService:
         brand_name: str | None = None,
         difficulty_offset: float = 0.0,
         gym_name: str | None = None,
+        reason: str | None = None,
     ) -> GymGradeSystem:
         """color_order + brand_name + difficulty_offset (+ gym_name) 수정.
 
@@ -932,6 +944,7 @@ class GradeService:
         ):
             raise GymGradeSystemForbidden(str(system_id))
         offset = difficulty_offset if is_admin else system.difficulty_offset
+        before = self.repo.snapshot(system)  # 변경 이력용 (수정 전 값)
         if is_admin and gym_name is not None and gym_name != system.gym_name:
             existing = await self.repo.get_by_gym_name(gym_name)
             if existing is not None:
@@ -940,12 +953,27 @@ class GradeService:
         updated = await self.repo.update_color_order(
             system, color_order, brand_name=brand_name, difficulty_offset=offset
         )
+        # 값이 실제로 바뀐 경우만 이력 (ADR-069) — 수정과 같은 트랜잭션
+        await self.repo.add_change(
+            system_id=updated.id,
+            gym_name=updated.gym_name,
+            action="update",
+            changed_by=user_id,
+            before=before,
+            after=self.repo.snapshot(updated),
+            reason=reason,
+        )
         await self.session.commit()
         await self.session.refresh(updated)  # commit 후 expire 방지 (응답 직렬화용)
         return updated
 
     async def delete_gym_system(
-        self, *, system_id: UUID, user_id: UUID, is_admin: bool = False
+        self,
+        *,
+        system_id: UUID,
+        user_id: UUID,
+        is_admin: bool = False,
+        reason: str | None = None,
     ) -> None:
         """삭제.
 
@@ -958,5 +986,20 @@ class GradeService:
             system.is_official or system.created_by != user_id
         ):
             raise GymGradeSystemForbidden(str(system_id))
+        await self.repo.add_change(
+            system_id=system.id,
+            gym_name=system.gym_name,
+            action="delete",
+            changed_by=user_id,
+            before=self.repo.snapshot(system),
+            after=None,
+            reason=reason,
+        )
         await self.repo.delete(system)
         await self.session.commit()
+
+    async def list_gym_system_changes(
+        self, system_id: UUID
+    ) -> list[GymGradeSystemChange]:
+        """변경 이력 최신순 (ADR-069). 삭제된 암장도 id 로 조회 가능."""
+        return await self.repo.list_changes(system_id)

@@ -5,7 +5,7 @@
 """
 
 from datetime import date, datetime
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -108,6 +108,11 @@ class GymGradeSystemCreate(BaseModel):
             "양수=실제로 더 어려운 암장, 음수=더 쉬운 암장"
         ),
     )
+    reason: str | None = Field(
+        default=None,
+        max_length=200,
+        description="변경 사유 (선택) — 변경 이력에 남는다 (ADR-069)",
+    )
 
     @field_validator("gym_name")
     @classmethod
@@ -160,6 +165,11 @@ class GymGradeSystemUpdate(BaseModel):
             "같은 트랜잭션에서 일괄 갱신되어 과거 기록의 그레이드 산정을 유지한다."
         ),
     )
+    reason: str | None = Field(
+        default=None,
+        max_length=200,
+        description="변경 사유 (선택) — 변경 이력에 남는다 (ADR-069)",
+    )
 
     @field_validator("brand_name")
     @classmethod
@@ -183,6 +193,22 @@ class GymGradeSystemUpdate(BaseModel):
     @classmethod
     def _validate_colors(cls, v: list[str]) -> list[str]:
         return _validate_color_order(v)
+
+
+class GymGradeSystemChangeResponse(BaseModel):
+    """짐 색체계 변경 이력 1건 (ADR-069)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    gym_system_id: UUID
+    gym_name: str
+    action: str  # create | update | delete | sync
+    changed_by: UUID | None
+    before: dict[str, Any] | None
+    after: dict[str, Any] | None
+    reason: str | None
+    created_at: datetime
 
 
 class GymGradeSystemResponse(BaseModel):

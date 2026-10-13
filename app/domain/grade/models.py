@@ -17,9 +17,10 @@ GymGradeSystem — 짐별 색 난이도 순서 정의.
 
 import uuid
 from datetime import datetime
+from typing import Any
 
-from sqlalchemy import Boolean, DateTime, Float, String, func, text
-from sqlalchemy.dialects.postgresql import ARRAY, UUID
+from sqlalchemy import Boolean, DateTime, Float, Index, String, Text, func, text
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.infra.db.base import Base
@@ -101,3 +102,56 @@ class GymGradeSystem(Base):
             f"<GymGradeSystem gym={self.gym_name!r} "
             f"levels={len(self.color_order)} official={self.is_official}>"
         )
+
+
+class GymGradeSystemChange(Base):
+    """짐 색체계 변경 이력 (ADR-069).
+
+    difficulty_offset·color_order 가 개인 종합점수를 직접 움직이게 되면서
+    (ADR-068) "누가 언제 왜 바꿨는지"를 남긴다. 점수가 갑자기 바뀌었을 때
+    원인 추적과 되돌리기 근거용. 값이 실제로 바뀐 경우만 기록한다.
+
+    gym_system_id 는 FK 가 아니다 — 암장이 삭제돼도 이력은 남아야 하므로
+    gym_name 스냅샷과 함께 저장한다.
+    """
+
+    __tablename__ = "gym_grade_system_changes"
+    __table_args__ = (
+        Index("ix_gym_grade_system_changes_system_created", "gym_system_id", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    gym_system_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        nullable=False,
+        comment="대상 짐 색체계 id (FK 아님 — 삭제 후에도 이력 유지)",
+    )
+    gym_name: Mapped[str] = mapped_column(
+        String(100), nullable=False, comment="변경 시점의 짐 이름 스냅샷"
+    )
+    action: Mapped[str] = mapped_column(
+        String(20), nullable=False, comment="create | update | delete | sync"
+    )
+    changed_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        nullable=True,
+        comment="변경한 사용자 id (동기화 스크립트 등 시스템 변경은 NULL)",
+    )
+    before: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB, nullable=True, comment="변경 전 값 (create 는 NULL)"
+    )
+    after: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB, nullable=True, comment="변경 후 값 (delete 는 NULL)"
+    )
+    reason: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="변경 사유 (선택)"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
