@@ -343,7 +343,9 @@ class GradeRepository:
         n = len(system.color_order)
         if n == 0:
             return ""
-        idx = int(ratio * (n - 1) + 0.5)
+        # 1e-9: 보정치 덧셈·뺄셈의 부동소수점 오차(1.15-0.3=0.8499…)로 정확히 .5 인
+        # 경계가 한 칸 내려가지 않게
+        idx = int(ratio * (n - 1) + 0.5 + 1e-9)
         idx = max(0, min(idx, n - 1))
         return system.color_order[idx]
 

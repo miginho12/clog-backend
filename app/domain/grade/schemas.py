@@ -245,6 +245,34 @@ class DailyActivity(BaseModel):
     day_score: float | None = None  # 하루 점수 (완등 없으면 None)
 
 
+class GymLevel(BaseModel):
+    """암장별 내 수준 한 줄 (그레이드 탭 기준 암장 선택·암장별 수준 표).
+
+    가 본 암장(visited)은 그 암장 실제 기록으로 최고 색·진척도를 보여주고,
+    안 가 본 암장은 다른 암장 완등을 보정치로 환산한 추정값만 있다.
+    """
+
+    gym_name: str
+    brand_name: str | None
+    color_order: list[str]
+    difficulty_offset: float
+    visited: bool  # 이 암장 컬러 기록이 있음 (완등·실패 무관)
+    record_count: int  # 이 암장 전체 기록 수
+    recent_count: int  # 최근 90일 기록 수 (기본 기준 암장 선정용)
+    last_climbed_at: date | None
+    top_label: str | None  # 이 암장에서 실제로 완등한 최고 색 (환산 아님)
+    next_grade_label: str | None  # top_label 다음 색
+    readiness_pct: float | None  # 이 암장 최고 색 완등 기록만으로 계산 (ADR-050)
+    estimated_top_label: str | None  # 모든 완등을 보정치로 환산한 추정 최고 색
+
+
+class MyGymLevels(BaseModel):
+    """GET /me/grade/gyms 응답."""
+
+    default_base_gym: str | None  # 최근 90일 가장 많이 기록한 암장 (없으면 전체 기간)
+    gyms: list[GymLevel]  # 가 본 암장(최근 많이 간 순) → 안 가 본 공식 암장(이름순)
+
+
 class ProfileStats(BaseModel):
     """프로필 클라이머 통계."""
 

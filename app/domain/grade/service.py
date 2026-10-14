@@ -28,9 +28,11 @@ from app.domain.grade.models import GymGradeSystem, GymGradeSystemChange
 from app.domain.grade.repository import GradeRepository
 from app.domain.grade.schemas import (
     ColorGrade,
+    GymLevel,
     GymRankingEntry,
     GymRankingResponse,
     GymRankingUser,
+    MyGymLevels,
     VScaleGrade,
 )
 
@@ -732,6 +734,106 @@ class GradeService:
             counted_days=counted_days,
             next_grade_label=next_grade_label,
             readiness_pct=readiness_pct,
+        )
+
+    async def compute_gym_levels(self, user_id: UUID) -> MyGymLevels:
+        """암장별 내 수준 (그레이드 탭 기준 암장 선택 + 암장별 수준 표).
+
+        가 본 암장은 그 암장 실제 기록 기준(최고 색 = 실제 완등, 진척도 = 그
+        암장 최고 색 완등만), 안 가 본 암장은 추정(estimated_top_label)만.
+        compute_color_grade(base_gym=...) 의 투영은 가 본 적 없는 암장에도
+        실제 기록처럼 색을 보여줘 혼동을 줬다.
+
+        추정 최고 = 모든 완등의 (자기 위치 + 자기 암장 보정치) 최댓값을 대상
+        암장 보정치만큼 되돌려 색으로. 위쪽은 마지막에만 자른다 — 먼저 1.0 에서
+        자르면 어려운 암장(보정치>0) 최고 색 완등이 다른 암장 최고 색과 같아져
+        보정치가 큰 암장으로의 환산이 낮게 나왔다.
+        """
+        logs = await self.repo.list_user_logs_for_grading(user_id, "color")
+        today = local_today()
+        recent_from = today - timedelta(days=MAX_AGE_DAYS)
+        systems = await self.repo.get_systems_map(
+            log.gym_name for log in logs if log.gym_name
+        )
+
+        by_gym: defaultdict[str, list[ClimbingLog]] = defaultdict(list)
+        best_score_ratio: float | None = None  # 보정치 반영, 위쪽 자르지 않음
+        for log in logs:
+            system = systems.get(log.gym_name) if log.gym_name else None
+            if system is None:
+                continue
+            by_gym[system.gym_name].append(log)
+            rank = self.repo.color_to_rank(system, log.grade_raw)
+            if log.is_success and rank is not None:
+                r = self.repo.rank_to_ratio(system, rank) + system.difficulty_offset
+                best_score_ratio = r if best_score_ratio is None else max(best_score_ratio, r)
+
+        targets = {s.gym_name: s for s in await self.repo.list_official_representatives()}
+        for name in by_gym:
+            targets.setdefault(name, systems[name])
+
+        levels: list[GymLevel] = []
+        for system in targets.values():
+            gym_logs = by_gym.get(system.gym_name, [])
+            # (rank, attempts, climbed_at) — 이 암장 실제 완등
+            sends = [
+                (rank, log.attempts, log.climbed_at)
+                for log in gym_logs
+                if log.is_success
+                and (rank := self.repo.color_to_rank(system, log.grade_raw)) is not None
+            ]
+            top_label = next_label = None
+            readiness = None
+            if sends:
+                top_rank = max(r for r, _, _ in sends)
+                top_label = system.color_order[top_rank]
+                if top_rank < len(system.color_order) - 1:
+                    next_label = system.color_order[top_rank + 1]
+                    readiness = compute_readiness(
+                        top_ratio=self.repo.rank_to_ratio(system, top_rank),
+                        top_grade_logs=[(a, c) for r, a, c in sends if r == top_rank],
+                        next_ratio=self.repo.rank_to_ratio(system, top_rank + 1),
+                        today=today,
+                    )
+            estimated = (
+                self.repo.ratio_to_color(
+                    system,
+                    max(0.0, min(1.0, best_score_ratio - system.difficulty_offset)),
+                )
+                if best_score_ratio is not None
+                else None
+            )
+            levels.append(
+                GymLevel(
+                    gym_name=system.gym_name,
+                    brand_name=system.brand_name,
+                    color_order=list(system.color_order),
+                    difficulty_offset=system.difficulty_offset,
+                    visited=bool(gym_logs),
+                    record_count=len(gym_logs),
+                    recent_count=sum(1 for log in gym_logs if log.climbed_at > recent_from),
+                    last_climbed_at=max((log.climbed_at for log in gym_logs), default=None),
+                    top_label=top_label,
+                    next_grade_label=next_label,
+                    readiness_pct=readiness,
+                    estimated_top_label=estimated,
+                )
+            )
+
+        # 가 본 암장: 최근 많이 간 순 → 전체 기록 수 → 최근 방문. 안 가 본 곳: 이름순
+        visited = sorted(
+            (g for g in levels if g.visited),
+            key=lambda g: (
+                -g.recent_count,
+                -g.record_count,
+                -(g.last_climbed_at or date.min).toordinal(),
+                g.gym_name,
+            ),
+        )
+        unvisited = sorted((g for g in levels if not g.visited), key=lambda g: g.gym_name)
+        return MyGymLevels(
+            default_base_gym=visited[0].gym_name if visited else None,
+            gyms=visited + unvisited,
         )
 
     # ── 암장 랭킹 (구현 7) ──

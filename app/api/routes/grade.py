@@ -4,6 +4,7 @@
 - GET /me/grade   본인 그레이드 (v_scale + color 두 트랙). 인증 필수.
 - GET /me/grade/timeline   주별 종합점수 추이.
 - GET /me/grade/activity   일별 활동 (잔디 UI).
+- GET /me/grade/gyms   암장별 내 수준 (기준 암장 선택·암장별 수준 표).
 
 쿼리:
 - base_gym (선택): color 탑레이팅 색을 어느 짐 기준으로 표시할지.
@@ -20,6 +21,7 @@ from app.domain.grade.dependencies import GradeServiceDep
 from app.domain.grade.schemas import (
     DailyActivity,
     MeGradeResponse,
+    MyGymLevels,
     ProfileStats,
     TimelinePoint,
 )
@@ -106,3 +108,19 @@ async def get_user_stats(
 ) -> ProfileStats:
     stats = await service.compute_profile_stats(user_id)
     return ProfileStats(**stats)
+
+
+@router.get(
+    "/grade/gyms",
+    response_model=MyGymLevels,
+    summary="암장별 내 수준",
+    description=(
+        "가 본 암장은 그 암장 실제 최고 완등 색·진척도, 안 가 본 공식 암장은 "
+        "보정치로 환산한 추정 최고 색. 기본 기준 암장 = 최근 90일 가장 많이 기록한 암장."
+    ),
+)
+async def get_my_gym_levels(
+    user: CurrentUserDep,
+    service: GradeServiceDep,
+) -> MyGymLevels:
+    return await service.compute_gym_levels(user.id)
