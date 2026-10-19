@@ -3,7 +3,7 @@
 import asyncio
 import uuid
 from collections.abc import Iterator
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
 from minio import Minio
@@ -254,12 +254,16 @@ class MediaService:
             if e.code != "NoSuchUpload":
                 raise
 
-    def list_object_keys(self) -> Iterator[str]:
-        """버킷의 모든 object_key 나열 (orphan 청소용)."""
+    def list_objects(self) -> Iterator[tuple[str, datetime | None]]:
+        """버킷의 모든 (object_key, 마지막 수정 시각) 나열 (orphan 청소용).
+
+        수정 시각은 reconcile 이 막 올라온 객체(업로드 직후·트랜스코딩 중)를
+        건너뛰는 데 쓴다.
+        """
         objects = self._client.list_objects(self._bucket, recursive=True)
         for obj in objects:
             if obj.object_name:
-                yield obj.object_name
+                yield obj.object_name, obj.last_modified
 
     def delete_object(self, object_key: str) -> None:
         """단일 객체 삭제 (멱등 — 없는 키여도 에러 안 냄)."""
