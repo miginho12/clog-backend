@@ -55,6 +55,15 @@ class ClimbingLog(Base):
             "categories",
             postgresql_using="gin",
         ),
+        # ADR-073: 피드 정렬(climbed_at DESC, created_at DESC) 전용 부분 인덱스.
+        # 없으면 피드마다 전체 Seq Scan + Sort (10만 건 46.8ms → 0.34ms, EXPLAIN ANALYZE).
+        # 피드는 항상 deleted_at IS NULL 이라 삭제 글은 인덱스에서 뺀다.
+        Index(
+            "ix_climbing_logs_feed_order",
+            text("climbed_at DESC"),
+            text("created_at DESC"),
+            postgresql_where=text("deleted_at IS NULL"),
+        ),
     )
 
     # ── 식별자 ──
