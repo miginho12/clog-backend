@@ -74,6 +74,10 @@ uv run uvicorn app.main:app --reload
 uv run pytest -v
 ```
 
+`tests/` 의 단위 테스트와 함께 `scripts/verify_*.py` 기능 검증 스크립트도 전부 실행된다
+(`tests/test_verify_scripts.py`, CI 동일). MinIO·샘플 영상이 필요한 스크립트는 기본 skip이며
+`VERIFY_LOCAL_ONLY=1` 로 함께 실행할 수 있다.
+
 ### 린트 + 포맷
 
 ```bash
