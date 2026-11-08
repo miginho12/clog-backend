@@ -1,0 +1,49 @@
+# Dependabot (H1 재발 방지, 2026-11-09)
+# - 마이너·패치는 생태계별 PR 하나로 묶는다 (PR 폭주 방지)
+# - 메이저는 묶지 않고 개별 PR — 직접 판단 (자동 병합 없음)
+# - PR 에서도 docker-build.yml 의 test(ruff·mypy·pip-audit·pytest)가 돈다
+version: 2
+updates:
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Seoul"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      python-minor-patch:
+        update-types: ["minor", "patch"]
+      python-security:
+        applies-to: security-updates
+        patterns: ["*"]
+
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Seoul"
+    commit-message:
+      prefix: "chore(deps)"
+    ignore:
+      # python 3.12 → 3.13 은 태그상 minor 지만 런타임 메이저 변경 — L1 에서 직접 진행
+      - dependency-name: "python"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Seoul"
+    commit-message:
+      prefix: "chore(ci)"
+    groups:
+      actions:
+        patterns: ["*"]

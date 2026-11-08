@@ -6,6 +6,11 @@ on:
     tags: ["v*"]
   pull_request:
     branches: [main]
+  # 주간 정기 검사 (H1 재발 방지, 2026-11-09): push 가 없어도 새 CVE 를
+  # pip-audit 로 잡아 notify-failure → Discord. 월 00:00 UTC = 09:00 KST
+  schedule:
+    - cron: "0 0 * * 1"
+  workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
@@ -93,6 +98,8 @@ jobs:
 
   build:
     needs: test
+    # 정기 검사·수동 실행은 test 만 — 이미지 push·gitops 태그 bump 를 하지 않는다
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read
