@@ -21,7 +21,6 @@ dependencies = [
     "asyncpg>=0.30.0",
     "alembic>=1.14.0",
     # JWT
-    "python-jose[cryptography]>=3.3.0",
     # Redis
     "redis>=5.2.0",
     # HTTP 클라이언트 (Day 12)
@@ -36,6 +35,7 @@ dependencies = [
     "aiosmtplib>=5.1.2",
     "opencv-python-headless>=5.0.0.93",
     "numpy>=2.5.4",
+    "pyjwt[crypto]>=2.10",
 ]
 
 [dependency-groups]
@@ -45,7 +45,6 @@ dev = [
     "ruff>=0.7.0",
     "mypy>=1.13.0",
     "asyncpg-stubs>=0.30.0",
-    "types-python-jose>=3.3.0",
     "pip-audit>=2.10.1",
 ]
 

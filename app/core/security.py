@@ -20,8 +20,8 @@ from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Any
 
-from jose import JWTError, jwt
-from jose.exceptions import ExpiredSignatureError
+import jwt
+from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
 from pydantic import BaseModel
 
 from app.core.config import get_settings
@@ -202,17 +202,19 @@ def decode_token(token: str, expected_type: TokenType) -> TokenPayload:
     settings = get_settings()
 
     try:
-        # python-jose 가 서명 + 만료 자동 검증
+        # PyJWT 가 서명 + 만료 + 발급자 자동 검증 (2026-11-09 python-jose 에서 이전, ADR-075).
+        # algorithms 는 설정값 하나로 고정 → 공개키로 HS256 위조(알고리즘 혼동)·alg=none 거부.
+        # require: 아래에서 바로 꺼내 쓰는 클레임 — 빠지면 KeyError(500) 대신 InvalidToken(401)
         payload: dict[str, Any] = jwt.decode(
             token,
             settings.get_jwt_public_key(),
             algorithms=[settings.jwt_algorithm],
-            # 발급자 검증 (선택, 안전성 ↑)
             issuer=settings.jwt_issuer,
+            options={"require": ["exp", "iat", "iss", "sub", "jti"]},
         )
     except ExpiredSignatureError as e:
         raise TokenExpired("token has expired") from e
-    except JWTError as e:
+    except InvalidTokenError as e:
         # 서명 불일치, 형식 오류, issuer 불일치 등
         logger.warning("invalid_token", error=str(e))
         raise InvalidToken(f"invalid token: {e}") from e
