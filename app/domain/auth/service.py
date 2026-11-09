@@ -44,7 +44,7 @@ from app.domain.auth.exceptions import (
     UserNotFoundForAuth,
 )
 from app.domain.auth.password_reset_repository import PasswordResetRepository
-from app.domain.auth.repository import RedisRefreshTokenRepository
+from app.domain.auth.repository import RedisRefreshTokenRepository, RefreshTokenRecord
 from app.domain.users.models import User
 from app.domain.users.repository import UserRepository
 
@@ -337,7 +337,20 @@ class AuthService:
 
     # ── 토큰 갱신 ──
 
-    async def refresh_access_token(self, refresh_token: str) -> str:
+    # 회전 직후 같은 토큰이 다시 오는 정상 상황(여러 탭이 동시에 갱신)을 탈취로 오판하지 않는 유예
+    ROTATION_REUSE_GRACE = timedelta(seconds=30)
+
+    async def refresh_access_token(
+        self, refresh_token: str, *, rotate: bool = False
+    ) -> tuple[str, str | None]:
+        """access 재발급. rotate=True 면 refresh 도 새로 발급하고 쓴 토큰은 폐기한다 (감사 M2).
+
+        Returns: (new_access, new_refresh | None)
+
+        재사용 감지: 회전으로 폐기된 refresh 가 유예(30s) 밖에서 다시 오면 탈취로 보고
+        그 사용자의 refresh 를 전부 폐기한다 (공격자·정상 사용자 중 누가 먼저 썼는지 모르므로
+        둘 다 끊고 재로그인시킨다). 로그아웃 등 다른 사유로 폐기된 토큰은 401 만.
+        """
         try:
             payload = decode_refresh_token(refresh_token)
         except TokenExpired as e:
@@ -347,11 +360,16 @@ class AuthService:
             logger.warning("refresh_token_invalid", error=str(e))
             raise InvalidCredentials("invalid refresh token") from e
 
-        entry = await self.refresh_repo.get(payload.jti)
-        if entry is None:
+        record = await self.refresh_repo.get_record(payload.jti)
+        if record is None:
             logger.warning("refresh_token_not_in_repo", jti=payload.jti)
             raise RefreshTokenNotFound("refresh token not found or revoked")
 
+        if record.revoked:
+            await self._handle_revoked_refresh(payload.jti, record)
+            raise RefreshTokenNotFound("refresh token not found or revoked")
+
+        entry = record
         if entry.user_id != payload.sub:
             logger.error(
                 "refresh_token_user_mismatch",
@@ -366,9 +384,40 @@ class AuthService:
             logger.warning("refresh_blocked_banned_or_missing", user_id=payload.sub)
             raise InvalidCredentials("account unavailable")
 
-        new_access = create_access_token(payload.sub)
-        logger.info("access_token_refreshed", user_id=payload.sub)
-        return new_access
+        if not rotate:
+            # 회전 신호가 없는 옛 클라이언트 — 기존 동작(access 만). 감사 M2 ③에서 제거 예정
+            new_access = create_access_token(payload.sub)
+            logger.info("access_token_refreshed", user_id=payload.sub, rotated=False)
+            return new_access, None
+
+        # 원자적으로 "아직 유효하면 rotated 표시" — 동시에 온 같은 토큰 요청은 하나만 통과
+        if not await self.refresh_repo.mark_rotated(payload.jti):
+            logger.info("refresh_rotation_lost_race", jti=payload.jti, user_id=payload.sub)
+            raise RefreshTokenNotFound("refresh token not found or revoked")
+
+        pair = await self._issue_token_pair(UUID(payload.sub))
+        logger.info("access_token_refreshed", user_id=payload.sub, rotated=True)
+        return pair.access_token, pair.refresh_token
+
+    async def _handle_revoked_refresh(self, jti: str, record: RefreshTokenRecord) -> None:
+        """폐기된 refresh 가 다시 왔을 때 — 회전 폐기 + 유예 밖이면 재사용(탈취)로 처리."""
+        if record.revoked_reason != "rotated":
+            logger.info("refresh_token_revoked_reuse", jti=jti, reason=record.revoked_reason)
+            return
+        elapsed = (
+            datetime.now(UTC) - record.revoked_at if record.revoked_at else self.ROTATION_REUSE_GRACE
+        )
+        if elapsed < self.ROTATION_REUSE_GRACE:
+            logger.info("refresh_token_reuse_within_grace", jti=jti, user_id=record.user_id)
+            return
+        revoked = await self.refresh_repo.revoke_all_for_user(record.user_id, reason="reuse_detected")
+        logger.warning(
+            "refresh_token_reuse_detected",
+            jti=jti,
+            user_id=record.user_id,
+            seconds_since_rotation=int(elapsed.total_seconds()),
+            revoked_count=revoked,
+        )
 
     # ── 로그아웃 ──
 

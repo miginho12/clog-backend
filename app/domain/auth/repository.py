@@ -60,6 +60,41 @@ class RefreshTokenEntry:
     revoked: bool = False
 
 
+@dataclass
+class RefreshTokenRecord:
+    """폐기 여부·사유까지 포함한 저장 상태 (회전 재사용 감지용, 감사 M2).
+
+    revoked_reason: rotated(회전으로 교체) | logout | reuse_detected | None(옛 데이터)
+    """
+
+    user_id: str
+    expires_at: datetime
+    revoked: bool
+    revoked_reason: str | None = None
+    revoked_at: datetime | None = None
+
+
+# 아직 폐기되지 않은 토큰만 rotated 로 표시하고 1 을, 이미 폐기/없음이면 0 을 돌려준다.
+# GET→판정→SET 을 한 번에 해야 같은 refresh 로 동시에 온 두 요청이 둘 다 회전에 성공해
+# 토큰 계열이 둘로 갈라지는 일을 막을 수 있다 (Redis 는 스크립트를 원자적으로 실행).
+_MARK_ROTATED_LUA = """
+local raw = redis.call('GET', KEYS[1])
+if not raw then return 0 end
+local d = cjson.decode(raw)
+if d['revoked'] then return 0 end
+d['revoked'] = true
+d['revoked_reason'] = 'rotated'
+d['revoked_at'] = ARGV[1]
+local ttl = redis.call('TTL', KEYS[1])
+if ttl > 0 then
+  redis.call('SET', KEYS[1], cjson.encode(d), 'EX', ttl)
+else
+  redis.call('SET', KEYS[1], cjson.encode(d))
+end
+return 1
+"""
+
+
 # ─────────────────────────────────────────
 #  Redis Repository
 # ─────────────────────────────────────────
@@ -142,11 +177,42 @@ class RedisRefreshTokenRepository:
             revoked=False,
         )
 
-    async def revoke(self, jti: str) -> bool:
+    async def get_record(self, jti: str) -> RefreshTokenRecord | None:
+        """폐기된 토큰도 사유와 함께 돌려준다 (없거나 TTL 만료면 None).
+
+        get() 은 폐기 토큰을 "없음"으로 숨기지만, 회전 재사용 감지는 "회전으로 폐기된
+        토큰이 다시 왔다"를 구분해야 한다.
+        """
+        raw = await self.redis.get(_refresh_token_key(jti))
+        if raw is None:
+            return None
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError as e:
+            logger.error("refresh_token_json_error", jti=jti, error=str(e))
+            return None
+        revoked_at = data.get("revoked_at")
+        return RefreshTokenRecord(
+            user_id=data["user_id"],
+            expires_at=datetime.fromisoformat(data["expires_at"]),
+            revoked=bool(data.get("revoked", False)),
+            revoked_reason=data.get("revoked_reason"),
+            revoked_at=datetime.fromisoformat(revoked_at) if revoked_at else None,
+        )
+
+    async def mark_rotated(self, jti: str) -> bool:
+        """회전으로 교체됨 표시 — 아직 유효했던 경우에만 True (원자적, _MARK_ROTATED_LUA)."""
+        result = await self.redis.eval(  # type: ignore[misc]  # redis-py 스텁 미비
+            _MARK_ROTATED_LUA, 1, _refresh_token_key(jti), datetime.now(UTC).isoformat()
+        )
+        return bool(result)
+
+    async def revoke(self, jti: str, reason: str = "logout") -> bool:
         """Refresh token 무효화.
 
         Delete 대신 revoked=True 로 표시.
         이유: 같은 jti 가 재사용되는 경우 감지 가능 (보안).
+        reason·revoked_at 을 남겨 회전 폐기(rotated)와 구분한다 (감사 M2).
         """
         token_key = _refresh_token_key(jti)
         raw = await self.redis.get(token_key)
@@ -165,6 +231,8 @@ class RedisRefreshTokenRepository:
         # revoked 표시 (TTL 유지)
         ttl = await self.redis.ttl(token_key)
         data["revoked"] = True
+        data["revoked_reason"] = reason
+        data["revoked_at"] = datetime.now(UTC).isoformat()
         new_data = json.dumps(data)
 
         if ttl > 0:
@@ -175,11 +243,12 @@ class RedisRefreshTokenRepository:
         logger.debug("refresh_token_revoked", jti=jti)
         return True
 
-    async def revoke_all_for_user(self, user_id: str) -> int:
+    async def revoke_all_for_user(self, user_id: str, reason: str = "logout") -> int:
         """특정 사용자의 모든 refresh token 무효화.
 
         멀티 디바이스 로그아웃 / 비밀번호 변경 시 사용.
         ⭐ 진호님이 겪은 멀티세션 문제의 해법.
+        회전 재사용 감지 시 reason="reuse_detected" (감사 M2).
         """
         user_key = _user_tokens_key(user_id)
         # 사용자의 모든 jti 가져오기
@@ -190,7 +259,7 @@ class RedisRefreshTokenRepository:
 
         count = 0
         for jti in jtis:
-            if await self.revoke(jti):
+            if await self.revoke(jti, reason=reason):
                 count += 1
 
         logger.info("all_refresh_tokens_revoked", user_id=user_id, count=count)
