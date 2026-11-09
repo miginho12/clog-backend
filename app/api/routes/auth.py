@@ -254,19 +254,16 @@ async def login(
 @router.post(
     "/refresh",
     response_model=AccessTokenResponse,
-    response_model_exclude_none=True,
-    summary="Access token 갱신 (회전 지원 클라이언트는 refresh 도 재발급)",
+    summary="토큰 갱신 (access + refresh 회전)",
 )
 @limiter.limit(RateLimits.REFRESH)
 async def refresh_token(
     request: Request, payload: RefreshRequest, service: AuthServiceDep
 ) -> AccessTokenResponse:
     settings = get_settings()
-    # 새 refresh 를 저장하는 클라이언트만 회전 (감사 M2 ②) — 옛 번들 앱 보호
-    rotate = request.headers.get("x-clog-refresh-rotation") == "1"
-    new_access, new_refresh = await service.refresh_access_token(
-        payload.refresh_token, rotate=rotate
-    )
+    # 항상 회전 (감사 M2 ③, 2026-11-09). X-Clog-Refresh-Rotation 헤더는 더 이상 보지 않는다
+    # — 모든 클라이언트(웹 1fcb374+, 앱 재빌드)가 새 refresh 를 저장한다.
+    new_access, new_refresh = await service.refresh_access_token(payload.refresh_token)
     return AccessTokenResponse(
         access_token=new_access,
         expires_in=settings.jwt_access_token_expire_minutes * 60,

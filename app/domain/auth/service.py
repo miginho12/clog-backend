@@ -26,7 +26,6 @@ from app.core.security import (
     TokenExpired,
     TokenPair,
     WrongTokenType,
-    create_access_token,
     create_token_pair,
     decode_refresh_token,
 )
@@ -340,12 +339,11 @@ class AuthService:
     # 회전 직후 같은 토큰이 다시 오는 정상 상황(여러 탭이 동시에 갱신)을 탈취로 오판하지 않는 유예
     ROTATION_REUSE_GRACE = timedelta(seconds=30)
 
-    async def refresh_access_token(
-        self, refresh_token: str, *, rotate: bool = False
-    ) -> tuple[str, str | None]:
-        """access 재발급. rotate=True 면 refresh 도 새로 발급하고 쓴 토큰은 폐기한다 (감사 M2).
+    async def refresh_access_token(self, refresh_token: str) -> tuple[str, str]:
+        """access + refresh 재발급(회전). 쓴 refresh 는 rotated 로 폐기한다 (감사 M2, ADR-076).
 
-        Returns: (new_access, new_refresh | None)
+        Returns: (new_access, new_refresh)
+        (M2 ③, 2026-11-09: 회전 신호 헤더 없는 옛 클라이언트용 access-only 경로 제거)
 
         재사용 감지: 회전으로 폐기된 refresh 가 유예(30s) 밖에서 다시 오면 탈취로 보고
         그 사용자의 refresh 를 전부 폐기한다 (공격자·정상 사용자 중 누가 먼저 썼는지 모르므로
@@ -383,12 +381,6 @@ class AuthService:
         if user is None or user.is_banned:
             logger.warning("refresh_blocked_banned_or_missing", user_id=payload.sub)
             raise InvalidCredentials("account unavailable")
-
-        if not rotate:
-            # 회전 신호가 없는 옛 클라이언트 — 기존 동작(access 만). 감사 M2 ③에서 제거 예정
-            new_access = create_access_token(payload.sub)
-            logger.info("access_token_refreshed", user_id=payload.sub, rotated=False)
-            return new_access, None
 
         # 원자적으로 "아직 유효하면 rotated 표시" — 동시에 온 같은 토큰 요청은 하나만 통과
         if not await self.refresh_repo.mark_rotated(payload.jti):

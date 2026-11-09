@@ -64,13 +64,9 @@ class TokenResponse(BaseModel):
 
 
 class AccessTokenResponse(BaseModel):
-    """토큰 갱신 응답.
-
-    refresh_token: 회전한 경우에만 포함 (X-Clog-Refresh-Rotation: 1 클라이언트, 감사 M2).
-    옛 클라이언트에는 필드 자체를 빼서(response_model_exclude_none) 응답 모양을 유지한다.
-    """
+    """토큰 갱신 응답 — 항상 새 refresh 포함 (회전, 감사 M2 ③)."""
 
     access_token: str
     token_type: str = "Bearer"
     expires_in: int
-    refresh_token: str | None = None
+    refresh_token: str

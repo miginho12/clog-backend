@@ -1,7 +1,7 @@
 """refresh token 회전 + 재사용 감지 검증 (감사 M2, DB rollback · Redis 키 정리).
 
 시나리오:
-  - 회전 신호 없음(옛 클라이언트) → access 만, 같은 refresh 계속 사용 가능
+  - 항상 회전(M2 ③) — 같은 refresh 로 두 번째 갱신은 401(유예 안)
   - 회전 → 새 refresh 발급, 쓴 토큰은 rotated 로 폐기, 새 토큰으로 다시 회전(체인)
   - 회전 폐기 토큰 재사용 — 유예(30s) 안: 401 만(현재 토큰 유지) / 밖: 사용자 refresh 전부 폐기
   - 로그아웃 폐기 토큰 재사용 → 401 만 (전체 폐기 안 함)
@@ -59,9 +59,9 @@ def make_user(nickname: str) -> User:
     )
 
 
-async def refresh_ok(auth: AuthService, token: str, *, rotate: bool) -> tuple[str, str | None] | None:
+async def refresh_ok(auth: AuthService, token: str) -> tuple[str, str] | None:
     try:
-        return await auth.refresh_access_token(token, rotate=rotate)
+        return await auth.refresh_access_token(token)
     except RefreshTokenNotFound:
         return None
 
@@ -80,31 +80,32 @@ async def run(session: AsyncSession, redis) -> None:  # type: ignore[no-untyped-
     await session.flush()
     _users.update({str(alice.id), str(bob.id)})
 
-    # ── 옛 클라이언트 (회전 신호 없음) ────────────────────
+    # ── 항상 회전 (M2 ③: 옛 access-only 경로 제거) ────────
     legacy = await auth._issue_token_pair(alice.id)
     track(legacy.refresh_token)
-    r1 = await refresh_ok(auth, legacy.refresh_token, rotate=False)
-    r2 = await refresh_ok(auth, legacy.refresh_token, rotate=False)
-    check("회전 신호 없음 → access 만 (refresh None)", r1 is not None and r1[1] is None)
-    check("회전 신호 없음 → 같은 refresh 로 다시 갱신 가능", r2 is not None)
+    r1 = await refresh_ok(auth, legacy.refresh_token)
+    if r1:
+        track(r1[1])
+    check("갱신 → 항상 새 refresh 반환", r1 is not None and bool(r1[1]) and r1[1] != legacy.refresh_token)
+    check("같은 refresh 로 두 번째 갱신 → 401 (이미 회전됨)", await refresh_ok(auth, legacy.refresh_token) is None)
     check("발급된 access 가 유효", r1 is not None and decode_access_token(r1[0]).sub == str(alice.id))
 
     # ── 회전 체인 ─────────────────────────────────────────
     t0 = (await auth._issue_token_pair(alice.id)).refresh_token
     track(t0)
-    a1 = await refresh_ok(auth, t0, rotate=True)
+    a1 = await refresh_ok(auth, t0)
     t1 = a1[1] if a1 else None
     track(t1)
     check("회전 → 새 refresh 발급(다른 jti)", bool(t1) and decode_refresh_token(t1).jti != decode_refresh_token(t0).jti)  # type: ignore[arg-type]
     rec0 = await repo.get_record(decode_refresh_token(t0).jti)
     check("쓴 토큰은 revoked_reason=rotated", rec0 is not None and rec0.revoked and rec0.revoked_reason == "rotated")
-    a2 = await refresh_ok(auth, t1, rotate=True)  # type: ignore[arg-type]
+    a2 = await refresh_ok(auth, t1)  # type: ignore[arg-type]
     t2 = a2[1] if a2 else None
     track(t2)
     check("새 토큰으로 다시 회전(체인)", bool(t2))
 
     # ── 유예 안 재사용 (여러 탭 경쟁) ─────────────────────
-    check("회전 폐기 토큰 재사용(유예 안) → 401", await refresh_ok(auth, t1, rotate=True) is None)  # type: ignore[arg-type]
+    check("회전 폐기 토큰 재사용(유예 안) → 401", await refresh_ok(auth, t1) is None)  # type: ignore[arg-type]
     rec2 = await repo.get_record(decode_refresh_token(t2).jti)  # type: ignore[arg-type]
     check("유예 안 재사용은 현재 토큰을 폐기하지 않음", rec2 is not None and not rec2.revoked)
 
@@ -112,7 +113,7 @@ async def run(session: AsyncSession, redis) -> None:  # type: ignore[no-untyped-
     side = (await auth._issue_token_pair(alice.id)).refresh_token  # 다른 기기 세션
     track(side)
     await auth.logout(side)
-    check("로그아웃한 토큰 재사용 → 401", await refresh_ok(auth, side, rotate=True) is None)
+    check("로그아웃한 토큰 재사용 → 401", await refresh_ok(auth, side) is None)
     rec2 = await repo.get_record(decode_refresh_token(t2).jti)  # type: ignore[arg-type]
     check("로그아웃 토큰 재사용은 전체 폐기를 일으키지 않음", rec2 is not None and not rec2.revoked)
 
@@ -123,16 +124,19 @@ async def run(session: AsyncSession, redis) -> None:  # type: ignore[no-untyped-
     data = json.loads(await redis.get(key))
     data["revoked_at"] = (datetime.now(UTC) - timedelta(seconds=60)).isoformat()  # 60초 전 회전으로 조작
     await redis.set(key, json.dumps(data), ex=await redis.ttl(key))
-    check("회전 폐기 토큰 재사용(유예 밖) → 401", await refresh_ok(auth, t1, rotate=True) is None)  # type: ignore[arg-type]
+    check("회전 폐기 토큰 재사용(유예 밖) → 401", await refresh_ok(auth, t1) is None)  # type: ignore[arg-type]
     rec2 = await repo.get_record(decode_refresh_token(t2).jti)  # type: ignore[arg-type]
     check("→ 사용자 refresh 전부 폐기(reason=reuse_detected)", rec2 is not None and rec2.revoked and rec2.revoked_reason == "reuse_detected")
-    check("→ 현재 토큰으로도 갱신 불가(재로그인 필요)", await refresh_ok(auth, t2, rotate=True) is None)  # type: ignore[arg-type]
-    check("→ 다른 사용자(bob)는 영향 없음", await refresh_ok(auth, bob_tok, rotate=False) is not None)
+    check("→ 현재 토큰으로도 갱신 불가(재로그인 필요)", await refresh_ok(auth, t2) is None)  # type: ignore[arg-type]
+    bob_r = await refresh_ok(auth, bob_tok)
+    if bob_r:
+        track(bob_r[1])  # 회전으로 생긴 새 키도 정리 대상
+    check("→ 다른 사용자(bob)는 영향 없음", bob_r is not None)
 
     # ── 동시 회전 경쟁 ────────────────────────────────────
     race = (await auth._issue_token_pair(bob.id)).refresh_token
     track(race)
-    results = await asyncio.gather(refresh_ok(auth, race, rotate=True), refresh_ok(auth, race, rotate=True))
+    results = await asyncio.gather(refresh_ok(auth, race), refresh_ok(auth, race))
     for r in results:
         if r:
             track(r[1])
