@@ -96,5 +96,8 @@ class RateLimits:
     USERS_SEARCH = "60/minute"
     USERS_UPDATE = "30/minute"
 
+    # CSP 위반 보고 (인증 없음 — 브라우저 자동 전송, 로그 폭주 방지, 감사 M3)
+    CSP_REPORT = "30/minute"
+
     # 기본 (catch-all)
     DEFAULT = "100/minute"

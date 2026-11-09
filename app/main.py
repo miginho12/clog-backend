@@ -16,6 +16,7 @@ from app.api.routes import (
     climbing,
     comment_likes,
     comments,
+    csp,
     follows,
     grade,
     gym_grade_systems,
@@ -111,6 +112,7 @@ def create_app() -> FastAPI:
 
     # ── 라우터 ──
     app.include_router(health.router)
+    app.include_router(csp.router)
     app.include_router(auth.router)
     app.include_router(users.router)
     app.include_router(climbing.router)
