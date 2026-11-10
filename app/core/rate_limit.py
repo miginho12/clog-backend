@@ -80,6 +80,7 @@ class RateLimits:
     # OAuth (CSRF + 부하 보호)
     KAKAO_LOGIN = "10/minute"
     KAKAO_CALLBACK = "30/minute"
+    KAKAO_APP_EXCHANGE = "10/minute"  # 앱 일회용 코드 교환 (M14)
 
     # 비밀번호 찾기 (메일 스팸/코드 무차별 대입 방지)
     PASSWORD_RESET_REQUEST = "5/minute"

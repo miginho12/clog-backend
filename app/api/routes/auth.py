@@ -4,19 +4,24 @@
 - POST /auth/login: local 환경에서만 활성화 (시뮬레이션, dev/prod 비활성)
 - 모든 엔드포인트에 rate limit 적용
 - /auth/kakao/login: 10/min (CSRF + 부하)
+- /auth/kakao/app/exchange: 10/min (앱 일회용 코드 교환, 감사 M14)
 - /auth/refresh: 30/min
 - /auth/logout: 60/min
 - /auth/logout-all: 10/min
 """
 
+from typing import Literal
+from urllib.parse import urlencode
+
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from fastapi.responses import RedirectResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.api.dependencies import CurrentUserDep
 from app.core.config import get_settings
 from app.core.rate_limit import RateLimits, limiter
 from app.domain.auth.dependencies import AuthServiceDep, KakaoOAuthServiceDep
+from app.domain.auth.kakao_service import CODE_CHALLENGE_RE
 from app.domain.auth.local_schemas import (
     LocalLoginRequest,
     PasswordResetConfirmSchema,
@@ -34,6 +39,7 @@ from app.domain.auth.schemas import (
     RefreshRequest,
     TokenResponse,
 )
+from app.domain.auth.state_repository import OAuthState
 from app.domain.users.schemas import UserResponse
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -304,17 +310,36 @@ async def logout_all(
 @router.get(
     "/kakao/login",
     summary="카카오 로그인 시작",
-    description="카카오 로그인 페이지로 302 Redirect.",
+    description=(
+        "카카오 로그인 페이지로 302 Redirect. "
+        "앱은 client=app + code_challenge(PKCE S256) 로 시작하면 콜백이 토큰 대신 "
+        "일회용 코드를 앱 스킴으로 돌려준다 (/auth/kakao/app/exchange 로 교환)."
+    ),
     responses={
         302: {"description": "카카오 로그인 페이지로 리다이렉트"},
+        422: {"description": "client=app 인데 code_challenge 가 없거나 형식 오류"},
         429: {"description": "Too many requests"},
     },
 )
 @limiter.limit(RateLimits.KAKAO_LOGIN)
 async def kakao_login_initiate(
-    request: Request, service: KakaoOAuthServiceDep
+    request: Request,
+    service: KakaoOAuthServiceDep,
+    client: Literal["web", "app"] = Query("web", description="app = Capacitor 앱 (M14)"),
+    code_challenge: str | None = Query(
+        None, description="PKCE S256 challenge (client=app 필수)"
+    ),
+    code_challenge_method: Literal["S256"] = Query("S256"),
 ) -> RedirectResponse:
-    authorize_url, _state = await service.initiate_login()
+    meta = None
+    if client == "app":
+        if not code_challenge or not CODE_CHALLENGE_RE.fullmatch(code_challenge):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="client=app 은 code_challenge(S256, 43자 base64url)가 필요합니다.",
+            )
+        meta = OAuthState(client="app", code_challenge=code_challenge)
+    authorize_url, _state = await service.initiate_login(meta)
     return RedirectResponse(url=authorize_url, status_code=302)
 
 
@@ -346,9 +371,16 @@ async def kakao_login_callback(
     code: str = Query(..., description="카카오 인증 코드"),
     state: str = Query(..., description="CSRF 방어 state"),
 ) -> RedirectResponse:
-    pair, user, is_new_user = await service.handle_callback(code=code, state=state)
+    result = await service.handle_callback(code=code, state=state)
 
     settings = get_settings()
+    # 앱: 토큰 대신 일회용 코드만 커스텀 스킴으로 (가로채도 PKCE verifier 없이는 무용)
+    if result.app_code is not None:
+        app_url = f"{settings.app_redirect_uri}?{urlencode({'code': result.app_code})}"
+        return RedirectResponse(url=app_url, status_code=302)
+
+    pair, is_new_user = result.pair, result.is_new_user
+    assert pair is not None
     # 토큰을 fragment(#)에 담아 프론트 콜백 페이지로 리다이렉트
     # fragment 는 서버로 전송되지 않아 로그/Referer 에 안 남음
     fragment = (
@@ -359,3 +391,34 @@ async def kakao_login_callback(
     )
     redirect_url = f"{settings.frontend_url}/auth/callback#{fragment}"
     return RedirectResponse(url=redirect_url, status_code=302)
+
+
+class KakaoAppExchangeRequest(BaseModel):
+    code: str = Field(..., min_length=1, max_length=128)
+    code_verifier: str = Field(..., min_length=43, max_length=128)
+
+
+@router.post(
+    "/kakao/app/exchange",
+    response_model=KakaoCallbackResponse,
+    summary="앱 카카오 로그인 코드 교환",
+    description=(
+        "앱이 커스텀 스킴으로 받은 일회용 코드 + PKCE code_verifier → JWT. "
+        "코드는 60초·1회용, 틀린 verifier 로 한 번 시도하면 코드는 폐기된다 (감사 M14)."
+    ),
+    responses={401: {"description": "코드 없음·만료·재사용 또는 verifier 불일치"}},
+)
+@limiter.limit(RateLimits.KAKAO_APP_EXCHANGE)
+async def kakao_app_exchange(
+    request: Request, body: KakaoAppExchangeRequest, service: KakaoOAuthServiceDep
+) -> KakaoCallbackResponse:
+    pair, user, is_new_user = await service.exchange_app_code(
+        code=body.code, code_verifier=body.code_verifier
+    )
+    return KakaoCallbackResponse(
+        access_token=pair.access_token,
+        refresh_token=pair.refresh_token,
+        expires_in=pair.expires_in,
+        user=UserResponse.model_validate(user),
+        is_new_user=is_new_user,
+    )

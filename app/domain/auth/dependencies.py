@@ -15,6 +15,7 @@ from fastapi import Depends, Request
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.domain.auth.app_code_repository import AppLoginCodeRepository
 from app.domain.auth.email_verify_repository import EmailVerifyRepository
 from app.domain.auth.kakao_service import KakaoOAuthService
 from app.domain.auth.password_reset_repository import PasswordResetRepository
@@ -64,6 +65,12 @@ def get_oauth_state_repository(
     redis: Annotated[Redis, Depends(get_redis_client)],
 ) -> OAuthStateRepository:
     return OAuthStateRepository(redis)
+
+
+def get_app_code_repository(
+    redis: Annotated[Redis, Depends(get_redis_client)],
+) -> AppLoginCodeRepository:
+    return AppLoginCodeRepository(redis)
 
 
 def get_email_verify_repository(
@@ -124,6 +131,7 @@ def get_kakao_oauth_service(
         RedisRefreshTokenRepository, Depends(get_refresh_token_repository)
     ],
     user_repo: Annotated[UserRepository, Depends(get_user_repository)],
+    app_code_repo: Annotated[AppLoginCodeRepository, Depends(get_app_code_repository)],
 ) -> KakaoOAuthService:
     return KakaoOAuthService(
         session=session,
@@ -131,6 +139,7 @@ def get_kakao_oauth_service(
         state_repo=state_repo,
         refresh_repo=refresh_repo,
         user_repo=user_repo,
+        app_code_repo=app_code_repo,
     )
 
 

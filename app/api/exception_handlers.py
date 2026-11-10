@@ -20,6 +20,7 @@ from app.domain.auth.exceptions import (
     KakaoUserInfoFailed,
     LocalLoginNotAvailable,
     NicknameAlreadyTaken,
+    OAuthAppCodeInvalid,
     OAuthStateInvalid,
     PasswordResetCodeInvalid,
     PasswordResetTokenInvalid,
@@ -217,6 +218,17 @@ async def oauth_state_invalid_handler(request: Request, exc: OAuthStateInvalid) 
         401,
         "OAUTH_STATE_INVALID",
         "OAuth 인증 세션이 만료되었거나 잘못된 요청입니다. 다시 로그인해주세요.",
+    )
+
+
+async def oauth_app_code_invalid_handler(
+    request: Request, exc: OAuthAppCodeInvalid
+) -> JSONResponse:
+    logger.warning("oauth_app_code_invalid", reason=str(exc), path=request.url.path)
+    return _error_response(
+        401,
+        "OAUTH_APP_CODE_INVALID",
+        "로그인 정보가 만료되었거나 잘못되었습니다. 다시 로그인해주세요.",
     )
 
 
@@ -549,6 +561,7 @@ def register_exception_handlers(app: FastAPI) -> None:
 
     # Kakao OAuth (Day 12)
     _register(app, OAuthStateInvalid, oauth_state_invalid_handler)
+    _register(app, OAuthAppCodeInvalid, oauth_app_code_invalid_handler)
     _register(app, KakaoTokenExchangeFailed, kakao_token_exchange_failed_handler)
     _register(app, KakaoUserInfoFailed, kakao_user_info_failed_handler)
     _register(app, KakaoEmailNotAvailable, kakao_email_not_available_handler)

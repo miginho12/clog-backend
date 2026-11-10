@@ -150,6 +150,9 @@ class Settings(BaseSettings):
     # 카카오 콜백 처리 후 사용자를 돌려보낼 프론트엔드 주소
     # 백엔드가 토큰을 fragment로 붙여 {frontend_url}/auth/callback 로 302
     frontend_url: str = Field(default="http://localhost:5173")
+    # 앱(Capacitor) 로그인 복귀 주소 (감사 M14) — 시스템 브라우저에서 카카오 로그인 후
+    # 이 커스텀 스킴으로 302 → OS 가 앱을 연다. 토큰 대신 일회용 코드만 싣는다.
+    app_redirect_uri: str = Field(default="com.climblog.app://auth/callback")
 
     kakao_authorize_url: str = "https://kauth.kakao.com/oauth/authorize"
     kakao_token_url: str = "https://kauth.kakao.com/oauth/token"
@@ -198,6 +201,8 @@ class Settings(BaseSettings):
     media_multipart_presign_expiry: int = Field(default=3600)
 
     oauth_state_ttl_seconds: int = Field(default=300)
+    # 앱 로그인 일회용 코드 수명 — 브라우저 → 앱 전환 + 교환 요청이면 충분 (M14)
+    oauth_app_code_ttl_seconds: int = Field(default=60)
 
     # ── 메타 ──
     @property

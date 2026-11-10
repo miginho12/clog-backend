@@ -84,6 +84,17 @@ class KakaoEmailNotAvailable(AuthDomainError):
         super().__init__(f"kakao email not agreed: kakao_id={kakao_id}")
 
 
+class OAuthAppCodeInvalid(AuthDomainError):
+    """앱 로그인 일회용 코드 교환 실패 (감사 M14).
+
+    원인(구분해서 알려주지 않음 — 가로챈 쪽에 힌트를 주지 않기 위해):
+    - 코드 없음·만료(60초)·이미 사용됨
+    - code_verifier 가 로그인 시작 때의 code_challenge 와 불일치
+    """
+
+    pass
+
+
 class OAuthStateInvalid(AuthDomainError):
     """OAuth state 불일치 (CSRF 의심).
 
