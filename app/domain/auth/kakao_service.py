@@ -124,7 +124,9 @@ class KakaoOAuthService:
         meta = await self.state_repo.consume(state)
         if meta is None:
             raise OAuthStateInvalid("invalid or expired state parameter")
-        if meta.client == "app" and not meta.code_challenge:
+        # 앱이면 challenge 필수 — 지역 변수로 받아 이후 타입이 str 로 좁혀진다
+        app_challenge = meta.code_challenge if meta.client == "app" else None
+        if meta.client == "app" and not app_challenge:
             raise OAuthStateInvalid("app state without code_challenge")
 
         # 2. Code → Access Token 교환
@@ -144,9 +146,9 @@ class KakaoOAuthService:
             raise AccountBanned(str(user.id))
 
         # 5-a. 앱: 토큰 대신 일회용 코드 (커스텀 스킴 URL 에 토큰을 싣지 않는다)
-        if meta.client == "app":
+        if app_challenge:
             app_code = await self.app_code_repo.create(
-                user_id=str(user.id), is_new=is_new, code_challenge=meta.code_challenge
+                user_id=str(user.id), is_new=is_new, code_challenge=app_challenge
             )
             logger.info(
                 "kakao_login_complete",
