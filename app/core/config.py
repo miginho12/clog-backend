@@ -170,7 +170,7 @@ class Settings(BaseSettings):
 
     # ── MinIO (오브젝트 스토리지 / 미디어 업로드) ──
     # 내부: 백엔드가 presigned 발급/관리에 쓰는 클러스터 내부 엔드포인트
-    minio_endpoint: str = Field(default="minio.dev.svc.cluster.local:9000")
+    minio_endpoint: str = Field(default="minio.storage.svc.cluster.local:9000")  # 감사 M4: storage 네임스페이스
     # 외부: presigned URL 호스트 (브라우저가 닿는 주소). 비면 endpoint 로 폴백
     minio_public_endpoint: str = Field(default="")
     minio_access_key: str = Field(default="")
