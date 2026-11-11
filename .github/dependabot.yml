@@ -20,6 +20,11 @@ updates:
       python-security:
         applies-to: security-updates
         patterns: ["*"]
+    ignore:
+      # L1 결정(2026-11-11): arq 0.28.0(최신)이 redis<6 을 요구 → 5.x 유지
+      # → arq 가 redis 6 이상을 허용하면 ignore 를 지우고 올린다
+      - dependency-name: "redis"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "docker"
     directory: "/"
