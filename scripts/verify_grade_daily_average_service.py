@@ -153,8 +153,9 @@ async def run(session: AsyncSession) -> None:
     check("미등록 암장 기록: 활동량엔 포함, 하루 점수는 None",
           by[d(3)]["total"] == 1 and by[d(3)]["day_score"] is None, f"{by[d(3)]}")
     from app.main import app as fastapi_app
-    paths = {getattr(r, "path", "") for r in fastapi_app.routes}
-    check("라우트 GET /me/grade/activity 등록", "/me/grade/activity" in paths)
+    # FastAPI 0.137+: app.routes 는 라우터 트리 → 앱 등록은 openapi 로 확인
+    check("라우트 GET /me/grade/activity 등록",
+          "get" in fastapi_app.openapi()["paths"].get("/me/grade/activity", {}))
 
     await offset_case(session, crepo, grepo, service, today)
 

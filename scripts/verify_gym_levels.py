@@ -13,9 +13,11 @@ import sys
 import uuid
 from datetime import timedelta
 
+from fastapi.routing import APIRoute
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.infra.db.models  # noqa: F401
+from app.api.routes.grade import router as grade_router
 from app.domain.climbing.repository import ClimbingRepository
 from app.domain.grade.repository import GradeRepository
 from app.domain.grade.service import GradeService, compute_readiness, local_today
@@ -145,9 +147,12 @@ async def run(session: AsyncSession) -> None:
     _ = (sys_a, sys_b, sys_c)
 
     print("\n[라우트]")
-    route = next((r for r in fastapi_app.routes if getattr(r, "path", "") == "/me/grade/gyms"), None)
-    check("GET /me/grade/gyms 등록", route is not None and "GET" in getattr(route, "methods", set()))
-    deps = [d.call.__name__ for d in route.dependant.dependencies] if route else []  # type: ignore[attr-defined]
+    # FastAPI 0.137+: app.routes 는 라우터 트리 → route 객체는 라우터에서, 앱 등록은 openapi 로 확인
+    route = next((r for r in grade_router.routes if isinstance(r, APIRoute) and r.path == "/me/grade/gyms"), None)
+    check("GET /me/grade/gyms 등록",
+          route is not None and "GET" in route.methods
+          and "get" in fastapi_app.openapi()["paths"].get("/me/grade/gyms", {}))
+    deps = [d.call.__name__ for d in route.dependant.dependencies if d.call] if route else []
     check("인증 필요 (get_current_user 의존성)", "get_current_user" in deps, f"{deps}")
 
 

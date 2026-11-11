@@ -11,9 +11,11 @@ import asyncio
 import sys
 import uuid
 
+from fastapi.routing import APIRoute
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.infra.db.models  # noqa: F401
+from app.api.routes.gym_grade_systems import router as gym_router
 from app.domain.grade.repository import GradeRepository
 from app.domain.grade.service import GradeService
 from app.domain.users.models import User
@@ -124,16 +126,12 @@ async def run(session: AsyncSession) -> None:
           and len({c.created_at for c in h}) == 4, f"{[c.action for c in h]}")
 
     print("\n[라우트]")
-    routes = {
-        (getattr(r, "path", ""), m)
-        for r in fastapi_app.routes
-        for m in getattr(r, "methods", set()) or set()
-    }
+    # FastAPI 0.137+: app.routes 는 라우터 트리 → route 객체는 라우터에서, 앱 등록은 openapi 로 확인
+    hist = "/gym-grade-systems/{system_id}/history"
+    route = next((r for r in gym_router.routes if isinstance(r, APIRoute) and r.path == hist), None)
     check("GET /gym-grade-systems/{system_id}/history 등록",
-          ("/gym-grade-systems/{system_id}/history", "GET") in routes)
-    route = next(r for r in fastapi_app.routes
-                 if getattr(r, "path", "") == "/gym-grade-systems/{system_id}/history")
-    deps = [d.call.__name__ for d in route.dependant.dependencies]  # type: ignore[attr-defined]
+          route is not None and "GET" in route.methods and "get" in fastapi_app.openapi()["paths"].get(hist, {}))
+    deps = [d.call.__name__ for d in route.dependant.dependencies if d.call] if route else []
     check("관리자 전용 (require_admin 의존성)", "require_admin" in deps, f"{deps}")
 
 

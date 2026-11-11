@@ -8,7 +8,6 @@ from arq import create_pool
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi.middleware import SlowAPIMiddleware
-from starlette_prometheus import PrometheusMiddleware, metrics
 
 from app.api.exception_handlers import register_exception_handlers
 from app.api.routes import (
@@ -28,6 +27,7 @@ from app.api.routes import (
 )
 from app.core.config import get_settings
 from app.core.logging import get_logger, setup_logging
+from app.core.metrics import PrometheusMiddleware, metrics
 from app.core.rate_limit import limiter
 from app.infra.db.engine import close_engine, init_engine
 from app.infra.redis import close_redis, init_redis
@@ -92,7 +92,7 @@ def create_app() -> FastAPI:
     app.state.limiter = limiter
     app.add_middleware(SlowAPIMiddleware)
 
-    # ⭐ Day 15: Prometheus metrics
+    # ⭐ Day 15: Prometheus metrics (L1 B: starlette-prometheus → app.core.metrics, ADR-093)
     app.add_middleware(PrometheusMiddleware)
     app.add_route("/metrics", metrics)
 
