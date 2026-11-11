@@ -36,6 +36,16 @@ class TranscodeError(Exception):
     """트랜스코딩 실패."""
 
 
+def fit_within(max_dim: int) -> str:
+    """긴 변을 max_dim 이하로 줄이는 ffmpeg scale 필터 (비율 유지, 원본보다 키우지 않음).
+
+    상자를 MAX×MAX 로 주면 force_original_aspect_ratio=decrease 가 작은 원본을 상자에 '맞춰'
+    키운다(864x1072 → 1032x1280, 2026-11 발견). 상자를 min(MAX, 원본) 으로 잡으면 상자가
+    원본보다 커질 수 없어 줄이기만 한다. 따옴표는 표현식 안의 쉼표를 필터 구분자로 읽지 않게 한다.
+    """
+    return f"scale=w='min({max_dim},iw)':h='min({max_dim},ih)':force_original_aspect_ratio=decrease"
+
+
 async def extract_video_thumbnail(settings: Settings, src: str, dst: str) -> None:
     """영상에서 대표 프레임 1장을 JPG 로 추출 (그리드 정지 썸네일용).
 
@@ -60,9 +70,7 @@ async def extract_video_thumbnail(settings: Settings, src: str, dst: str) -> Non
         src,
         "-vf",
         (
-            "thumbnail,"
-            f"scale=w={settings.thumbnail_max_dimension}:h={settings.thumbnail_max_dimension}"
-            ":force_original_aspect_ratio=decrease"
+            f"thumbnail,{fit_within(settings.thumbnail_max_dimension)}"
         ),
         "-frames:v",
         "1",
@@ -106,15 +114,10 @@ class TranscodeService:
             "-y",
             "-i",
             src,
-            # 비율 유지 + 긴 변을 max_dimension 이하로 (세로/가로 무관).
-            # force_original_aspect_ratio=decrease: 원본보다 크게 안 늘림.
+            # 비율 유지 + 긴 변을 max_dimension 이하로, 원본보다 키우지 않음 (fit_within).
             # 짝수 강제(-2 대신 trunc): H.264 는 너비/높이가 짝수여야 함.
             "-vf",
-            (
-                f"scale=w={s.transcode_max_dimension}:h={s.transcode_max_dimension}"
-                ":force_original_aspect_ratio=decrease"
-                ",scale=trunc(iw/2)*2:trunc(ih/2)*2"
-            ),
+            f"{fit_within(s.transcode_max_dimension)},scale=trunc(iw/2)*2:trunc(ih/2)*2",
             "-c:v",
             "libx264",
             "-preset",
