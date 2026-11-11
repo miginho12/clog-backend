@@ -18,7 +18,7 @@ class Settings(BaseSettings):
 
     # ── 기본 정보 ──
     app_name: str = "clog-backend"
-    app_version: str = "1.0.0"  # x-release-please-version (release-please 가 릴리스마다 갱신)
+    app_version: str = "1.0.1"  # x-release-please-version (release-please 가 릴리스마다 갱신)
     environment: Literal["dev", "prod", "local"] = Field(default="local")
 
     # ── 서버 ──
