@@ -151,4 +151,6 @@ class CommentRepository:
             )
             .group_by(Comment.parent_id)
         )
-        return {row[0]: int(row[1]) for row in result.all()}
+        # SQLAlchemy 2.1: Row 가 parent_id 를 UUID | None 으로 정확히 타이핑 → None 은 WHERE IN 으로
+        # 실제로 나올 수 없지만 타입을 좁혀 둔다(동작 동일)
+        return {parent_id: int(n) for parent_id, n in result.tuples() if parent_id is not None}
