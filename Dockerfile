@@ -10,7 +10,7 @@
 # ─────────────────────────────────────────────────────────────
 
 # ============== Stage 1: Builder ==============
-FROM python:3.12-slim-bookworm AS builder
+FROM python:3.14-slim-trixie AS builder
 
 # uv 설치 (Rust 기반, 빠른 패키지 매니저)
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
@@ -38,7 +38,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 
 # ============== Stage 2: Runtime ==============
-FROM python:3.12-slim-bookworm AS runtime
+FROM python:3.14-slim-trixie AS runtime
 
 # 런타임에 필요한 최소 패키지만
 # ffmpeg: 영상 트랜스코딩 워커용 (API 컨테이너도 같은 이미지 공유)

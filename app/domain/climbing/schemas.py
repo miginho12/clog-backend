@@ -76,7 +76,7 @@ class ClimbingLogCreate(BaseModel):
     follow_target: FollowTarget | None = None
 
     @model_validator(mode="after")
-    def validate_follow(self) -> "ClimbingLogCreate":
+    def validate_follow(self) -> ClimbingLogCreate:
         # 들찍은 워커가 영상을 크롭 렌더링하는 기능 → 영상이 첨부된 경우만 의미가 있다
         if self.video_mode == "follow" and not (self.media_type == "video" and self.media_url):
             raise ValueError("들찍 모드는 영상을 첨부한 경우에만 사용할 수 있습니다")

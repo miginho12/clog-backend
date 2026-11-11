@@ -229,7 +229,7 @@ class ClimbingLog(Base):
     like_count: int
     liked_by_me: bool
     comment_count: int
-    top_comment: "CommentPreview | None"
+    top_comment: CommentPreview | None
 
     def __repr__(self) -> str:
         return (

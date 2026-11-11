@@ -49,7 +49,7 @@ def get_sessionmaker() -> async_sessionmaker[AsyncSession]:
     return _sessionmaker
 
 
-async def get_session() -> AsyncGenerator[AsyncSession, None]:
+async def get_session() -> AsyncGenerator[AsyncSession]:
     """FastAPI 의존성 주입.
 
     매 요청마다 새 세션 생성 + 사용 후 자동 정리.

@@ -58,7 +58,7 @@ class CommentResponse(BaseModel):
 class CommentListResponse(BaseModel):
     """댓글 목록 (최상위 + 대댓글 중첩)."""
 
-    items: list["CommentThread"]
+    items: list[CommentThread]
     total: int
 
 

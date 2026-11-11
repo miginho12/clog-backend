@@ -3,7 +3,7 @@ name = "clog-backend"
 version = "0.1.0"
 description = "Clog - 클라이밍 기록 + 커뮤니티 백엔드"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 authors = [
     { name = "miginho", email = "jinhoya89@gmail.com" }
 ]
@@ -53,14 +53,14 @@ package = false
 
 [tool.ruff]
 line-length = 100
-target-version = "py312"
+target-version = "py314"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP", "B", "SIM"]
 ignore = ["E501", "B008", "N818"]  # B008: FastAPI 패턴 / N818: 예외명은 도메인 일관 스타일(~NotFound/~Forbidden) 유지
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.14"
 strict = true
 ignore_missing_imports = true
 

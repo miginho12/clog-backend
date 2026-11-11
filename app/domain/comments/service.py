@@ -28,7 +28,7 @@ class CommentService:
         repository: CommentRepository,
         climbing_repo: ClimbingRepository,
         like_repo: CommentLikeRepository,
-        notification_service: "NotificationService",
+        notification_service: NotificationService,
     ):
         self.session = session
         self.repo = repository

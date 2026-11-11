@@ -36,7 +36,9 @@ updates:
     commit-message:
       prefix: "chore(deps)"
     ignore:
-      # python 3.12 → 3.13 은 태그상 minor 지만 런타임 메이저 변경 — L1 에서 직접 진행
+      # python minor(3.14 → 3.15)는 태그상 minor 지만 런타임 메이저 변경 — 직접 진행
+      # (pyproject requires-python·ruff·mypy·.python-version 을 함께 바꿔야 해서 Dockerfile 만 바꾸는 PR 은 어긋남.
+      #  2026-11-11 L1 B-3 에서 3.12 bookworm → 3.14 trixie 완료)
       - dependency-name: "python"
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
 

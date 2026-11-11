@@ -54,7 +54,7 @@ class TokenResponse(BaseModel):
     expires_in: int  # 초 단위
 
     @classmethod
-    def from_pair(cls, pair: TokenPair) -> "TokenResponse":
+    def from_pair(cls, pair: TokenPair) -> TokenResponse:
         return cls(
             access_token=pair.access_token,
             refresh_token=pair.refresh_token,
