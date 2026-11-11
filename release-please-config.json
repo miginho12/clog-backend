@@ -1,0 +1,30 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "packages": {
+    ".": {
+      "release-type": "python",
+      "package-name": "clog-backend",
+      "include-component-in-tag": false,
+      "changelog-path": "CHANGELOG.md",
+      "extra-files": [
+        {
+          "type": "toml",
+          "path": "uv.lock",
+          "jsonpath": "$.package[?(@.name.value=='clog-backend')].version"
+        },
+        "app/core/config.py"
+      ],
+      "changelog-sections": [
+        { "type": "feat", "section": "기능" },
+        { "type": "fix", "section": "버그 수정" },
+        { "type": "perf", "section": "성능" },
+        { "type": "revert", "section": "되돌림" },
+        { "type": "refactor", "section": "리팩터링", "hidden": true },
+        { "type": "docs", "section": "문서", "hidden": true },
+        { "type": "test", "section": "테스트", "hidden": true },
+        { "type": "ci", "section": "CI", "hidden": true },
+        { "type": "chore", "section": "기타", "hidden": true }
+      ]
+    }
+  }
+}

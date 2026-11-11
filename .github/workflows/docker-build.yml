@@ -3,7 +3,7 @@ name: Docker Build & Push
 on:
   push:
     branches: [main]
-    tags: ["v*"]
+    # v* 태그 트리거 제거(L1 C-2, 2026-11-12): 버전 태그 이미지는 release.yml 이 기존 sha 이미지에 태그만 추가
   pull_request:
     branches: [main]
   # 주간 정기 검사 (H1 재발 방지, 2026-11-09): push 가 없어도 새 CVE 를
@@ -127,8 +127,6 @@ jobs:
           tags: |
             type=ref,event=branch
             type=ref,event=pr
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
             type=sha,prefix=sha-,format=short
             type=raw,value=latest,enable={{is_default_branch}}
 
