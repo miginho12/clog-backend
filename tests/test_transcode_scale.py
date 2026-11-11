@@ -2,24 +2,43 @@
 
 이전 필터(scale=w=MAX:h=MAX:force_original_aspect_ratio=decrease)는 MAX×MAX 상자에
 '맞춰' 늘리기도 해서, 작은 원본(864x1072)이 1032x1280 으로 커졌다(ffmpeg 5.1·7.1 동일).
-실제 ffmpeg 로 합성 영상을 만들어 결과 해상도를 확인한다(ffmpeg 없으면 skip).
+실제 ffmpeg 로 합성 영상을 만들어 결과 해상도를 확인한다.
+
+ffmpeg: 시스템에 있으면 그것(Pi·운영 이미지와 같은 7.1), 없으면 dev 의존성 imageio-ffmpeg 의
+정적 바이너리를 ``ffmpeg`` 이름으로 PATH 에 연결(CI — GitHub 러너엔 ffmpeg 가 없고 apt 는
+ubuntu.com 미러 타임아웃으로 16분 멈춘 적 있음, 2026-11-12). 해상도는 OpenCV 로 잰다(ffprobe 불필요).
 """
 
-import json
 import os
 import shutil
 import subprocess
+from collections.abc import Iterator
 from pathlib import Path
 
+import cv2
 import pytest
 
 from app.core.config import get_settings
 from app.domain.media.transcode_service import TranscodeService, extract_video_thumbnail
 
-# 로컬에 ffmpeg 가 없으면 skip, CI(GitHub Actions 가 CI=true 설정)는 설치 단계가 있으니 skip 하지 않고 실패시킨다
-pytestmark = pytest.mark.skipif(
-    shutil.which("ffmpeg") is None and os.environ.get("CI") != "true", reason="ffmpeg 없음"
-)
+
+@pytest.fixture(scope="module", autouse=True)
+def ffmpeg_on_path(tmp_path_factory: pytest.TempPathFactory) -> Iterator[None]:
+    if shutil.which("ffmpeg"):
+        yield
+        return
+    try:
+        import imageio_ffmpeg
+    except ImportError:  # pragma: no cover — dev 의존성 미설치
+        pytest.skip("ffmpeg 없음(시스템·imageio-ffmpeg 둘 다)")
+    bindir = tmp_path_factory.mktemp("ffmpeg-bin")
+    (bindir / "ffmpeg").symlink_to(imageio_ffmpeg.get_ffmpeg_exe())
+    old = os.environ["PATH"]
+    os.environ["PATH"] = f"{bindir}{os.pathsep}{old}"
+    try:
+        yield
+    finally:
+        os.environ["PATH"] = old
 
 
 def _make_src(path: Path, w: int, h: int) -> None:
@@ -32,13 +51,17 @@ def _make_src(path: Path, w: int, h: int) -> None:
 
 
 def _dims(path: Path) -> tuple[int, int]:
-    out = subprocess.run(
-        ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height",
-         "-of", "json", str(path)],
-        check=True, capture_output=True, text=True,
-    ).stdout
-    s = json.loads(out)["streams"][0]
-    return int(s["width"]), int(s["height"])
+    if path.suffix == ".jpg":
+        img = cv2.imread(str(path))
+        assert img is not None, f"이미지 읽기 실패: {path}"
+        return int(img.shape[1]), int(img.shape[0])
+    cap = cv2.VideoCapture(str(path))
+    try:
+        ok, frame = cap.read()
+        assert ok, f"영상 읽기 실패: {path}"
+        return int(frame.shape[1]), int(frame.shape[0])
+    finally:
+        cap.release()
 
 
 # 기본 설정: 압축 긴 변 1280, 썸네일 긴 변 480

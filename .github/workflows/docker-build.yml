@@ -66,10 +66,6 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen
 
-      # tests/test_transcode_scale.py 가 실제 ffmpeg 로 영상 크기를 검증 (CI 에선 skip 금지)
-      - name: Install ffmpeg
-        run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends ffmpeg
-
       - name: Lint (ruff)
         run: uv run ruff check .
 

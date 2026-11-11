@@ -46,6 +46,7 @@ dev = [
     "mypy>=1.13.0",
     "asyncpg-stubs>=0.30.0",
     "pip-audit>=2.10.1",
+    "imageio-ffmpeg>=0.8.1",
 ]
 
 [tool.uv]
