@@ -1,6 +1,6 @@
 [project]
 name = "clog-backend"
-version = "1.0.0"
+version = "1.0.1"
 description = "Clog - 클라이밍 기록 + 커뮤니티 백엔드"
 readme = "README.md"
 requires-python = ">=3.14"
