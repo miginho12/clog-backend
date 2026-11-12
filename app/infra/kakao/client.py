@@ -162,6 +162,10 @@ class KakaoOAuthClient:
         try:
             response = await self.http.get(
                 self.settings.kakao_user_info_url,
+                # 이미지 URL 을 https 로 받는다(기본값 false = http). http 로 저장되면 웹 CSP
+                # (업그레이드 전 주소로 검사)·앱 WebView(mixed content) 에서 막힌다 — 2026-11-12 M3 부채.
+                # get_profile_image() 의 스킴 변환은 방어선으로 유지.
+                params={"secure_resource": "true"},
                 headers={
                     "Authorization": f"Bearer {kakao_access_token}",
                     "Content-Type": "application/x-www-form-urlencoded;charset=utf-8",
