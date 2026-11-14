@@ -26,7 +26,6 @@ from app.core.security import (
     TokenExpired,
     TokenPair,
     WrongTokenType,
-    create_token_pair,
     decode_refresh_token,
 )
 from app.domain.auth.email_verify_repository import EmailVerifyRepository
@@ -44,6 +43,7 @@ from app.domain.auth.exceptions import (
 )
 from app.domain.auth.password_reset_repository import PasswordResetRepository
 from app.domain.auth.repository import RedisRefreshTokenRepository, RefreshTokenRecord
+from app.domain.auth.tokens import issue_token_pair
 from app.domain.users.models import User
 from app.domain.users.repository import UserRepository
 
@@ -299,22 +299,11 @@ class AuthService:
     # ─────────────────────────────────────────
 
     async def _issue_token_pair(self, user_id: UUID) -> TokenPair:
-        """토큰 페어 발급 + refresh 저장.
+        """토큰 페어 발급 + refresh 저장 — signup / local_login / login / refresh 회전.
 
-        signup / local_login / (카카오) login 에서 공통 사용.
+        실제 발급은 tokens.issue_token_pair (카카오 로그인과 같은 경로).
         """
-        pair, refresh_jti = create_token_pair(user_id)
-
-        settings = get_settings()
-        expires_at = datetime.now(UTC) + timedelta(
-            days=settings.jwt_refresh_token_expire_days
-        )
-        await self.refresh_repo.save(
-            jti=refresh_jti,
-            user_id=str(user_id),
-            expires_at=expires_at,
-        )
-        return pair
+        return await issue_token_pair(self.refresh_repo, user_id)
 
     # ─────────────────────────────────────────
     #  로그인 (카카오/시뮬레이션 — 기존 Day 11)

@@ -11,14 +11,12 @@ import hashlib
 import hmac
 import re
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import get_settings
 from app.core.logging import get_logger
-from app.core.security import TokenPair, create_token_pair
+from app.core.security import TokenPair
 from app.domain.auth.app_code_repository import AppLoginCodeRepository
 from app.domain.auth.exceptions import (
     AccountBanned,
@@ -29,6 +27,7 @@ from app.domain.auth.exceptions import (
 from app.domain.auth.kakao_schemas import KakaoTokenResponse, KakaoUserInfo
 from app.domain.auth.repository import RedisRefreshTokenRepository
 from app.domain.auth.state_repository import OAuthState, OAuthStateRepository
+from app.domain.auth.tokens import issue_token_pair
 from app.domain.users.models import User
 from app.domain.users.repository import UserRepository
 from app.infra.kakao import KakaoOAuthClient
@@ -160,7 +159,7 @@ class KakaoOAuthService:
             return KakaoCallbackResult(user=user, is_new_user=is_new, app_code=app_code)
 
         # 5-b. web: 우리 시스템 JWT 발급
-        pair = await self._issue_tokens(user)
+        pair = await issue_token_pair(self.refresh_repo, user.id)
 
         logger.info(
             "kakao_login_complete",
@@ -195,22 +194,9 @@ class KakaoOAuthService:
             logger.warning("kakao_login_blocked_banned", user_id=str(user.id))
             raise AccountBanned(str(user.id))
 
-        pair = await self._issue_tokens(user)
+        pair = await issue_token_pair(self.refresh_repo, user.id)
         logger.info("kakao_app_code_exchanged", user_id=str(user.id), is_new_user=entry.is_new)
         return pair, user, entry.is_new
-
-    async def _issue_tokens(self, user: User) -> TokenPair:
-        pair, refresh_jti = create_token_pair(user.id)
-        settings = get_settings()
-        expires_at = datetime.now(UTC) + timedelta(
-            days=settings.jwt_refresh_token_expire_days
-        )
-        await self.refresh_repo.save(
-            jti=refresh_jti,
-            user_id=str(user.id),
-            expires_at=expires_at,
-        )
-        return pair
 
     # ── 내부: User 자동 생성/조회 ──
 
