@@ -30,6 +30,7 @@ __all__ = [
     "User",
     "ClimbingLog",
     "GymGradeSystem",
+    "GymGradeSystemChange",
     "Like",
     "Comment",
     "Follow",

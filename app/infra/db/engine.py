@@ -51,9 +51,6 @@ def init_engine() -> AsyncEngine:
         pool_pre_ping=True,
         # ── 로깅 ──
         echo=settings.db_echo,
-        # ── 기타 ──
-        # 비동기 환경에서 만든 connection 을 다른 task 에서 못 쓰게
-        future=True,
     )
 
     return _engine

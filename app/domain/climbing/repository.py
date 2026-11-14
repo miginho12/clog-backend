@@ -78,10 +78,11 @@ class ClimbingRepository:
     ) -> tuple[list[ClimbingLog], bool]:
         """피드 조회.
 
+        노출 조건(공통): 삭제 안 된 글, 탈퇴 안 한 작성자, media_status 가 None 또는 done.
+
         공개 범위 규칙:
-        - 비로그인(viewer_id=None): public 만
-        - 로그인: public 전체 + 본인의 private
-        (friends 는 친구 시스템 도입 후 확장)
+        - 비로그인(viewer_id=None): public 글 중 공개 계정(User.is_public) 작성자 것만
+        - 로그인: 위 + 본인 글 전체 + accepted 로 팔로우한 작성자의 public 글(비공개 계정이어도)
 
         필터: author_id, category(태그 포함), gym_name, grade_system, only_success
 
