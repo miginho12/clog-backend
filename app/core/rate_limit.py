@@ -65,7 +65,7 @@ limiter = Limiter(
     storage_uri=_get_storage_uri(),
     # 기본 정책 (각 엔드포인트 데코레이터 없을 때)
     default_limits=["100/minute"],
-    # 헤더에 limit 정보 포함 (X-RateLimit-*)
+    # X-RateLimit-* 헤더는 보내지 않음(False). 켜려면 엔드포인트가 Response 인자를 받아야 함
     headers_enabled=False,
 )
 

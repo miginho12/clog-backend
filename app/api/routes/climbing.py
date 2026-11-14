@@ -15,7 +15,6 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Query, Request, status
-from fastapi.security import HTTPBearer
 
 from app.api.dependencies import CurrentUserDep, OptionalUserId
 from app.domain.climbing.dependencies import ClimbingServiceDep
@@ -29,12 +28,6 @@ from app.domain.climbing.schemas import (
 )
 
 router = APIRouter(prefix="/climbing-logs", tags=["climbing"])
-
-# 선택적 인증용 bearer (토큰 없어도 OK)
-_optional_bearer = HTTPBearer(auto_error=False)
-
-
-
 
 
 # ─────────────────────────────────────────
